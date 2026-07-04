@@ -1,0 +1,2565 @@
+package com.example.ui.components
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.net.Uri
+import android.widget.MediaController
+import android.widget.Toast
+import android.widget.VideoView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import coil.compose.AsyncImage
+import com.example.data.JournalEntry
+import com.example.ui.AppViewModel
+import com.example.ui.theme.Charcoal
+import com.example.ui.theme.SurfaceCard
+import com.example.ui.theme.WaterBlue
+import com.example.util.MediaCompressionHelper
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.BiasAlignment
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.JavascriptInterface
+import android.webkit.WebSettings
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val entries by viewModel.journalEntries.collectAsState()
+    val contacts by viewModel.contacts.collectAsState()
+    val onThisDayOnScreenEnabled by viewModel.onThisDayOnScreenEnabled.collectAsState()
+    var isOnThisDayReminderDismissed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    var isSidebarExpanded by remember { mutableStateOf(false) }
+    val defaultJournalView by viewModel.defaultJournalView.collectAsState()
+    var currentJournalTab by remember(defaultJournalView) { mutableStateOf(defaultJournalView) }
+
+    // Custom Full-Screen Editor State
+    var showEditorScreen by remember { mutableStateOf(false) }
+    var showGooglePhotosDialog by remember { mutableStateOf(false) }
+    var activeEditingEntryId by remember { mutableStateOf<Int?>(null) }
+    var editingTitle by remember { mutableStateOf("") }
+    var editingTextValue by remember { mutableStateOf(TextFieldValue("")) }
+    var editingDate by remember { mutableStateOf("") }
+    var editingTime by remember { mutableStateOf("") }
+    var editingAttachments by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    var viewingEntry by remember { mutableStateOf<JournalEntry?>(null) }
+    val timelineListState = rememberLazyListState()
+
+    val extSelectedJournalId by viewModel.selectedJournalId.collectAsState()
+    LaunchedEffect(extSelectedJournalId) {
+        extSelectedJournalId?.let { idVal ->
+            val entry = entries.find { it.id == idVal }
+            if (entry != null) {
+                activeEditingEntryId = entry.id
+                editingTitle = entry.title
+                editingTextValue = androidx.compose.ui.text.input.TextFieldValue(entry.text)
+                editingDate = entry.dateString
+                editingTime = try {
+                    java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(entry.timestamp))
+                } catch (e: Exception) {
+                    java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                }
+                editingAttachments = if (entry.attachmentsJson.isNotEmpty()) {
+                    entry.attachmentsJson.split(";;")
+                } else {
+                    emptyList()
+                }
+                showEditorScreen = true
+                viewingEntry = null
+                viewModel.clearSelectedJournalId()
+            }
+        }
+    }
+
+    androidx.activity.compose.BackHandler(enabled = showEditorScreen || viewingEntry != null) {
+        if (showEditorScreen) {
+            showEditorScreen = false
+        } else if (viewingEntry != null) {
+            viewingEntry = null
+        }
+    }
+
+    // Helpers to manage recordings
+    var audioRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var isRecordingAudio by remember { mutableStateOf(false) }
+    var currentAudioRecordingFile by remember { mutableStateOf<File?>(null) }
+
+    // Launches to request missing camera/mic/location permissions
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val recordOk = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+        val cameraOk = permissions[Manifest.permission.CAMERA] ?: false
+        val locationOk = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        if (recordOk) {
+            Toast.makeText(context, "Microphone enabled", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Capture Photo helper launcher
+    var activePhotoFile by remember { mutableStateOf<File?>(null) }
+    val takePhotoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success && activePhotoFile != null) {
+            val optimizedFile = MediaCompressionHelper.compressImageFile(context, activePhotoFile!!)
+            editingAttachments = editingAttachments + "photo:${optimizedFile.absolutePath}"
+            
+            // Trigger 2-way sync: automatically upload the captured photo to Google Photos
+            viewModel.uploadJournalPhotoToGooglePhotos(context, optimizedFile)
+        }
+    }
+
+    // Capture Video helper launcher
+    var activeVideoFile by remember { mutableStateOf<File?>(null) }
+    val captureVideoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CaptureVideo()
+    ) { success ->
+        if (success && activeVideoFile != null) {
+            editingAttachments = editingAttachments + "video:${activeVideoFile!!.absolutePath}"
+        }
+    }
+
+    // Attach File helper launcher
+    val pickDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val copiedFile = copyFileToInternalSandbox(context, uri)
+            if (copiedFile != null) {
+                editingAttachments = editingAttachments + "file:${copiedFile.name}|path:${copiedFile.absolutePath}"
+            }
+        }
+    }
+
+    // Real-Time Auto-Save triggering block
+    LaunchedEffect(editingTitle, editingTextValue.text, editingDate, editingTime, editingAttachments) {
+        val entryId = activeEditingEntryId ?: return@LaunchedEffect
+        delay(550) // Debounce frequency
+        val parsedTimestamp = try {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).parse("$editingDate $editingTime")?.time ?: System.currentTimeMillis()
+        } catch (e: Exception) {
+            System.currentTimeMillis()
+        }
+
+        val updatedEntry = JournalEntry(
+            id = entryId,
+            title = editingTitle,
+            text = editingTextValue.text,
+            dateString = editingDate,
+            timestamp = parsedTimestamp,
+            attachmentsJson = editingAttachments.joinToString(";;")
+        )
+        viewModel.updateJournalEntry(updatedEntry)
+    }
+
+    if (showEditorScreen && activeEditingEntryId != null) {
+        // Fullscreen Advanced Diary Editor screen
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Charcoal
+        ) {
+            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                // Header Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    IconButton(onClick = { showEditorScreen = false }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back to Timeline", tint = Color.White)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Black.copy(alpha = 0.3f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Green)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Autosaved", color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Trash option
+                        IconButton(onClick = {
+                            val activeId = activeEditingEntryId
+                            if (activeId != null) {
+                                val found = entries.find { it.id == activeId }
+                                if (found != null) {
+                                    viewModel.deleteJournalEntry(found)
+                                }
+                            }
+                            showEditorScreen = false
+                        }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Discard Chronicle", tint = Color.Red.copy(alpha = 0.8f))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Line 1: Heading/Title
+                TextField(
+                    value = editingTitle,
+                    onValueChange = { editingTitle = it },
+                    placeholder = { Text("Heading", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.Gray) },
+                    colors = TextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.LightGray,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    textStyle = LocalTextStyle.current.copy(fontSize = 24.sp, fontWeight = FontWeight.ExtraBold),
+                    modifier = Modifier.fillMaxWidth().testTag("journal_heading_input")
+                )
+
+                // Customizable DateTime Row
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val calendar = java.util.Calendar.getInstance()
+                                if (editingDate.isNotEmpty()) {
+                                    try {
+                                        val parts = editingDate.split("-")
+                                        if (parts.size == 3) {
+                                            calendar.set(java.util.Calendar.YEAR, parts[0].toInt())
+                                            calendar.set(java.util.Calendar.MONTH, parts[1].toInt() - 1)
+                                            calendar.set(java.util.Calendar.DAY_OF_MONTH, parts[2].toInt())
+                                        }
+                                    } catch (e: Exception) {}
+                                }
+                                android.app.DatePickerDialog(
+                                    context,
+                                    { _, year, month, dayOfMonth ->
+                                        editingDate = String.format(java.util.Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth)
+                                    },
+                                    calendar.get(java.util.Calendar.YEAR),
+                                    calendar.get(java.util.Calendar.MONTH),
+                                    calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                                ).show()
+                            }
+                    ) {
+                        TextField(
+                            value = editingDate,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Custom Date (YYYY-MM-DD)", fontSize = 9.sp) },
+                            placeholder = { Text("Pick Date") },
+                            colors = TextFieldDefaults.colors(
+                                disabledTextColor = WaterBlue,
+                                disabledLabelColor = Color.LightGray,
+                                disabledContainerColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                val calendar = java.util.Calendar.getInstance()
+                                if (editingTime.isNotEmpty()) {
+                                    try {
+                                        val parts = editingTime.split(":")
+                                        if (parts.size == 2) {
+                                            calendar.set(java.util.Calendar.HOUR_OF_DAY, parts[0].toInt())
+                                            calendar.set(java.util.Calendar.MINUTE, parts[1].toInt())
+                                        }
+                                    } catch (e: Exception) {}
+                                }
+                                android.app.TimePickerDialog(
+                                    context,
+                                    { _, hourOfDay, minute ->
+                                        editingTime = String.format(java.util.Locale.US, "%02d:%02d", hourOfDay, minute)
+                                    },
+                                    calendar.get(java.util.Calendar.HOUR_OF_DAY),
+                                    calendar.get(java.util.Calendar.MINUTE),
+                                    true
+                                ).show()
+                            }
+                    ) {
+                        TextField(
+                            value = editingTime,
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Custom Time (HH:MM)", fontSize = 9.sp) },
+                            placeholder = { Text("Pick Time") },
+                            colors = TextFieldDefaults.colors(
+                                disabledTextColor = WaterBlue,
+                                disabledLabelColor = Color.LightGray,
+                                disabledContainerColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 12.sp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Unlimited Description text field tracking selection values (Scrollable column with inline media preview)
+                Box(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                    ) {
+                        TextField(
+                            value = editingTextValue,
+                            onValueChange = { editingTextValue = it },
+                            placeholder = { Text("Write your epic journey chronicle...", color = Color.Gray, fontSize = 14.sp) },
+                            colors = TextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.LightGray,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, lineHeight = 22.sp),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 200.dp).testTag("journal_body_input")
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // RENDER DETAILED MEDIA PREVIEW RIGHT IN EDITOR AS REQUESTED!
+                        val mediaAttachments = editingAttachments.filter { it.startsWith("photo:") || it.startsWith("video:") || it.startsWith("audio:") || it.startsWith("file:") }
+                        if (mediaAttachments.isNotEmpty()) {
+                            Text("MEDIA FILES ATTACHED", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            mediaAttachments.forEach { attach ->
+                                JournalMediaItem(
+                                    context = context,
+                                    attach = attach,
+                                    isEditing = true,
+                                    onDelete = {
+                                        editingAttachments = editingAttachments.filter { it != attach }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Autocomplete drop down suggestions for @ contact mentions
+                    val typedWord = remember(editingTextValue.text, editingTextValue.selection) {
+                        try {
+                            val text = editingTextValue.text
+                            val cursor = editingTextValue.selection.end
+                            if (cursor in 1..text.length) {
+                                val sub = text.substring(0, cursor)
+                                val spaceIdx = sub.lastIndexOf(' ')
+                                val word = if (spaceIdx != -1) sub.substring(spaceIdx + 1) else sub
+                                if (word.startsWith("@")) word else ""
+                            } else ""
+                        } catch (e: Exception) {
+                            ""
+                        }
+                    }
+
+                    if (typedWord.isNotEmpty()) {
+                        val term = typedWord.removePrefix("@").lowercase()
+                        val matchingContacts = contacts.filter {
+                            it.firstName.lowercase().contains(term) || it.lastName.lowercase().contains(term)
+                        }
+
+                        if (matchingContacts.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .fillMaxWidth()
+                                    .padding(8.dp)
+                                    .heightIn(max = 120.dp),
+                                colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                                border = BorderStroke(1.dp, WaterBlue.copy(alpha = 0.5f))
+                            ) {
+                                LazyColumn(modifier = Modifier.padding(8.dp)) {
+                                    items(matchingContacts) { contact ->
+                                        val contactName = "${contact.firstName}${contact.lastName}"
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    val completed = "@$contactName "
+                                                    val text = editingTextValue.text
+                                                    val cursor = editingTextValue.selection.end
+                                                    val sub = text.substring(0, cursor)
+                                                    val spaceIdx = sub.lastIndexOf(' ')
+                                                    val prefix = if (spaceIdx != -1) text.substring(0, spaceIdx + 1) else ""
+                                                    val suffix = text.substring(cursor)
+                                                    val resultText = prefix + completed + suffix
+                                                    val newCursor = (prefix + completed).length
+                                                    editingTextValue = TextFieldValue(
+                                                        text = resultText,
+                                                        selection = TextRange(newCursor)
+                                                    )
+                                                }
+                                                .padding(vertical = 6.dp, horizontal = 10.dp)
+                                        ) {
+                                            Icon(Icons.Default.Person, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("${contact.firstName} ${contact.lastName}", color = Color.White, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // In-editor rich attachments indicators row
+                if (editingAttachments.isNotEmpty()) {
+                    Text("Attachments (${editingAttachments.size}):", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        editingAttachments.forEachIndexed { index, attach ->
+                            val label = when {
+                                attach.startsWith("photo:") -> "📷 Photo"
+                                attach.startsWith("video:") -> "🎥 Video"
+                                attach.startsWith("audio:") -> "🎙️ Voice Record"
+                                attach.startsWith("loc:") -> "📍 Map Tag"
+                                else -> "📁 Doc Attached"
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color.White.copy(alpha = 0.1f))
+                                    .clickable {
+                                        // Option to remove attachment
+                                        editingAttachments = editingAttachments.filterIndexed { idx, _ -> idx != index }
+                                        Toast.makeText(context, "Attachment removed", Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label, color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red, modifier = Modifier.size(10.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Toolbar panel
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Bold editor format text option
+                        IconButton(onClick = {
+                            val selStart = editingTextValue.selection.start
+                            val selEnd = editingTextValue.selection.end
+                            val original = editingTextValue.text
+                            val newText = if (selStart != selEnd) {
+                                original.substring(0, selStart) + "**" + original.substring(selStart, selEnd) + "**" + original.substring(selEnd)
+                            } else {
+                                original.substring(0, selStart) + "**bold**" + original.substring(selStart)
+                            }
+                            editingTextValue = TextFieldValue(text = newText, selection = TextRange(selStart + 2, selEnd + 6))
+                        }) {
+                            Text("B", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                        }
+
+                        // Point wise list option
+                        IconButton(onClick = {
+                            val selStart = editingTextValue.selection.start
+                            val original = editingTextValue.text
+                            val newText = original.substring(0, selStart) + "\n• " + original.substring(selStart)
+                            editingTextValue = TextFieldValue(text = newText, selection = TextRange(selStart + 3))
+                        }) {
+                            Text("• List", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        }
+
+                        // Get Device Location option
+                        IconButton(onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                                requestPermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                            } else {
+                                Toast.makeText(context, "Pinpointing GPS...", Toast.LENGTH_SHORT).show()
+                                triggerFetchLocation(context) { lat, lng, city ->
+                                    val locAttach = "loc:$city|coords:$lat,$lng"
+                                    editingAttachments = editingAttachments + locAttach
+                                    Toast.makeText(context, "Added Geotag: $city", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Default.LocationOn, contentDescription = "Add Location", tint = WaterBlue)
+                        }
+
+                        // Snaps direct internal photo option
+                        IconButton(onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+                            } else {
+                                val outPhotoFile = File(com.example.util.StorageHelper.getAppFilesDir(context), "journal_photo_${System.currentTimeMillis()}.jpg")
+                                activePhotoFile = outPhotoFile
+                                val photoUri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", outPhotoFile)
+                                takePhotoLauncher.launch(photoUri)
+                            }
+                        }) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = "Camera Snapper", tint = Color.White)
+                        }
+
+                        // Snaps direct internal video option
+                        IconButton(onClick = {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                                requestPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+                            } else {
+                                val outVideoFile = File(com.example.util.StorageHelper.getAppFilesDir(context), "journal_video_${System.currentTimeMillis()}.mp4")
+                                activeVideoFile = outVideoFile
+                                val videoUri = androidx.core.content.FileProvider.getUriForFile(context, "com.example.fileprovider", outVideoFile)
+                                captureVideoLauncher.launch(videoUri)
+                            }
+                        }) {
+                            Icon(Icons.Default.Videocam, contentDescription = "Video Recorder", tint = Color.White)
+                        }
+
+                        // Record voice audio option
+                        IconButton(
+                            onClick = {
+                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                    requestPermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                                } else {
+                                    if (isRecordingAudio) {
+                                        // Stop recording
+                                        try {
+                                            audioRecorder?.stop()
+                                            audioRecorder?.release()
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                        audioRecorder = null
+                                        isRecordingAudio = false
+                                        val rec = currentAudioRecordingFile
+                                        if (rec != null) {
+                                            val compressedFile = File(rec.parentFile, "${rec.name}.gz")
+                                            val compressSuccess = MediaCompressionHelper.compressFileGzip(rec, compressedFile)
+                                            val finalAudioFile = if (compressSuccess) {
+                                                rec.delete()
+                                                compressedFile
+                                            } else {
+                                                rec
+                                            }
+                                            editingAttachments = editingAttachments + "audio:${finalAudioFile.absolutePath}"
+                                            Toast.makeText(context, "Voice memo attached & compressed!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        // Start recording code
+                                        val recFile = File(com.example.util.StorageHelper.getAppFilesDir(context), "voice_${System.currentTimeMillis()}.mp3")
+                                        currentAudioRecordingFile = recFile
+                                        try {
+                                            audioRecorder = MediaRecorder().apply {
+                                                setAudioSource(MediaRecorder.AudioSource.MIC)
+                                                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                                                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                                                setAudioEncodingBitRate(32000) // 32 kbps voice codec compression
+                                                setAudioSamplingRate(16000) // 16 kHz high compression speech sample rate
+                                                setOutputFile(recFile.absolutePath)
+                                                prepare()
+                                                start()
+                                            }
+                                            isRecordingAudio = true
+                                            Toast.makeText(context, "🎙️ Recording audio (Tap mic to stop)...", Toast.LENGTH_LONG).show()
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                            Toast.makeText(context, "Failure preparing recorder", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isRecordingAudio) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = "Voice Memo Record",
+                                tint = if (isRecordingAudio) Color.Red else Color.LightGray
+                            )
+                        }
+
+                        // Document selector attachment option
+                        IconButton(onClick = {
+                            pickDocumentLauncher.launch("*/*")
+                        }) {
+                            Icon(Icons.Default.AttachFile, contentDescription = "Attach Document", tint = Color.LightGray)
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Main Chronicles Dashboard Layout representation with Sidebar Toggle control
+        Box(modifier = modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Top header bar containing plus action only
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { isSidebarExpanded = !isSidebarExpanded }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Toggle Sidebar Manager", tint = Color.White)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "JOURNAL - ${currentJournalTab.uppercase()}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Google Photos integration sync button
+                        IconButton(
+                            onClick = {
+                                showGooglePhotosDialog = true
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color(0xFF1B2C3F))
+                                .size(40.dp)
+                                .testTag("google_photos_sync_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Photo,
+                                contentDescription = "Google Photos Integration",
+                                tint = Color(0xFF4285F4)
+                            )
+                        }
+
+                        var isSummarizing by remember { mutableStateOf(false) }
+                        
+                        IconButton(
+                            onClick = {
+                                isSummarizing = true
+                                viewModel.summarizeDayIntoJournalEntry { outcome ->
+                                    isSummarizing = false
+                                    Toast.makeText(context, "AI Daily Summary Added to Journal!", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color(0xFF0F2622))
+                                .size(40.dp)
+                                .testTag("summarize_today_btn")
+                        ) {
+                            if (isSummarizing) {
+                                CircularProgressIndicator(
+                                    color = Color(0xFF00BFA5),
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Face,
+                                    contentDescription = "AI Summarize Today",
+                                    tint = Color(0xFF00BFA5)
+                                )
+                            }
+                        }
+
+                        // Large Plus icon triggering inserting new draft
+                        IconButton(
+                            onClick = {
+                                val sdfDate = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                                val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+                                val nowStrDate = sdfDate.format(Date())
+                                val nowStrTime = sdfTime.format(Date())
+                                val initialText = "Date & Time: $nowStrDate $nowStrTime\n\n"
+
+                                scope.launch {
+                                    val generatedId = viewModel.createJournalEntryWithId(
+                                        title = "",
+                                        text = initialText,
+                                        dateString = nowStrDate,
+                                        timestamp = System.currentTimeMillis(),
+                                        attachments = ""
+                                    )
+                                    activeEditingEntryId = generatedId
+                                    editingTitle = ""
+                                    editingTextValue = TextFieldValue(initialText)
+                                    editingDate = nowStrDate
+                                    editingTime = nowStrTime
+                                    editingAttachments = emptyList()
+                                    showEditorScreen = true
+                                }
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(WaterBlue)
+                                .size(40.dp)
+                                .testTag("create_diary_btn")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Diary entry", tint = Color.Black)
+                        }
+                    }
+                }
+
+                // Dashboard views switcher
+                Card(
+                    modifier = Modifier.fillMaxSize(),
+                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Box(modifier = Modifier.padding(16.dp)) {
+                        when (currentJournalTab) {
+                            "Timeline" -> {
+                                Column {
+                                    Text(
+                                        text = "TIMELINE CHRONOLOGY",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Gray,
+                                        modifier = Modifier.padding(bottom = 12.dp)
+                                    )
+
+                                    val currentDayMonth = remember(entries) { SimpleDateFormat("MM-dd", Locale.US).format(Date()) }
+                                    val matchedAnniversaryEntries = remember(entries) { entries.filter { it.dateString.endsWith(currentDayMonth) } }
+
+                                    if (onThisDayOnScreenEnabled && matchedAnniversaryEntries.isNotEmpty() && !isOnThisDayReminderDismissed) {
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 12.dp)
+                                                .border(1.dp, WaterBlue.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24)),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.History,
+                                                    contentDescription = "Anniversary Icon",
+                                                    tint = WaterBlue,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = "On This Day Reminder",
+                                                        color = Color.White,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = "You have ${matchedAnniversaryEntries.size} historic entries written on this day in history!",
+                                                        color = Color.Gray,
+                                                        fontSize = 11.sp
+                                                    )
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        text = "View Anniversary Entries",
+                                                        color = WaterBlue,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        modifier = Modifier.clickable {
+                                                            currentJournalTab = "On This Day"
+                                                            viewModel.updateDefaultJournalView("On This Day")
+                                                        }
+                                                    )
+                                                }
+                                                IconButton(
+                                                    onClick = { isOnThisDayReminderDismissed = true }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Dismiss",
+                                                        tint = Color.Gray,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (entries.isEmpty()) {
+                                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Text("No chronicles documented. Click the + to persist today's record.", color = Color.Gray, fontSize = 12.sp)
+                                        }
+                                    } else {
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            LazyColumn(
+                                                state = timelineListState,
+                                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                                modifier = Modifier.fillMaxSize()
+                                            ) {
+                                            items(entries) { entry ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable { viewingEntry = entry }
+                                                        .background(SurfaceCard, RoundedCornerShape(12.dp))
+                                                        .padding(12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    // Box with Date and Month on Left Edge
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .width(68.dp)
+                            .height(58.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .background(WaterBlue)
+                                                            .padding(4.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                            val dateParts = try {
+                                                                val inputSdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                                                                val d = inputSdf.parse(entry.dateString)
+                                                                val outMonth = SimpleDateFormat("MMM", Locale.getDefault()).format(d)
+                                                                val outDay = SimpleDateFormat("dd", Locale.US).format(d)
+                                                                Pair(outMonth.uppercase(), outDay)
+                                                            } catch (e: Exception) {
+                                                                Pair("MEM", "??")
+                                                            }
+                                                            Text(text = dateParts.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                                                            Text(text = dateParts.second, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+                                                        }
+                                                    }
+
+                                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                                    // Content with constraints
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = if (entry.title.isNotEmpty()) entry.title else "Untitled Chronicle",
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            color = Color.White,
+                                                            fontSize = 14.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+
+                                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                                        // Strictly show just 1 or 2 lines for card description matching requirement
+                                                        Text(
+                                                            text = parseMarkdown(entry.text),
+                                                            color = Color.LightGray,
+                                                            fontSize = 12.sp,
+                                                            maxLines = 2,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            lineHeight = 16.sp
+                                                        )
+
+                                                        // Check location tags
+                                                        if (entry.attachmentsJson.contains("loc:")) {
+                                                            val cleanLoc = entry.attachmentsJson
+                                                                .split(";;")
+                                                                .find { it.trim().startsWith("loc:") }
+                                                                ?.removePrefix("loc:")
+                                                                ?.split("|coords:")
+                                                                ?.getOrNull(0) ?: ""
+                                                            if (cleanLoc.isNotEmpty()) {
+                                                                Spacer(modifier = Modifier.height(4.dp))
+                                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                    Icon(Icons.Default.LocationOn, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(10.dp))
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text(cleanLoc, color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        // Parse and display Hashtags and contact mentions on Card's very last line
+                                                        val hashTags = remember(entry.text) {
+                                                            Regex("""#\w+""").findAll(entry.text).map { it.value }.toList()
+                                                        }
+                                                        val contactTags = remember(entry.text) {
+                                                            Regex("""@\w+""").findAll(entry.text).map { it.value }.toList()
+                                                        }
+
+                                                        if (hashTags.isNotEmpty() || contactTags.isNotEmpty()) {
+                                                            Spacer(modifier = Modifier.height(6.dp))
+                                                            Row(
+                                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                                                            ) {
+                                                                contactTags.forEach { contact ->
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .clip(RoundedCornerShape(4.dp))
+                                                                            .background(Color(0xFF2E4057))
+                                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    ) {
+                                                                        Text(text = contact, color = WaterBlue, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                }
+                                                                hashTags.forEach { tag ->
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .clip(RoundedCornerShape(4.dp))
+                                                                            .background(Color(0xFF1D2C42))
+                                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                    ) {
+                                                                        Text(text = tag, color = Color.LightGray, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Spacer(modifier = Modifier.width(6.dp))
+
+
+                                                }
+                                            }
+                                        }
+
+                                        val showButton by remember {
+                                                derivedStateOf {
+                                                    timelineListState.firstVisibleItemIndex > 0
+                                                }
+                                            }
+                                            androidx.compose.animation.AnimatedVisibility(
+                                                visible = showButton,
+                                                enter = fadeIn() + expandIn(),
+                                                exit = fadeOut() + shrinkOut(),
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .padding(16.dp)
+                                            ) {
+                                                FloatingActionButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            timelineListState.animateScrollToItem(0)
+                                                        }
+                                                    },
+                                                    containerColor = WaterBlue,
+                                                    contentColor = Color.Black,
+                                                    modifier = Modifier.size(48.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                                        contentDescription = "Scroll to top"
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            "Monthly" -> {
+                                Column {
+                                    Text(
+                                        text = "MONTHLY PHOTO CALENDAR",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Gray,
+                                        modifier = Modifier.padding(bottom = 12.dp)
+                                    )
+
+                                    val daysInMonth = (1..30).toList()
+
+                                    LazyVerticalGrid(
+                                        columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(5),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxSize()
+                                    ) {
+                                        items(daysInMonth.size) { index ->
+                                            val day = daysInMonth[index]
+                                            val formattedDay = String.format("%02d", day)
+                                            val currentMonthYear = SimpleDateFormat("yyyy-MM", Locale.US).format(Date())
+                                            val targetDateString = "$currentMonthYear-$formattedDay"
+
+                                            val matchEntriesForDay = entries.filter { it.dateString == targetDateString }
+                                            val matchEntry = matchEntriesForDay.firstOrNull()
+                                            val photoPath = remember(matchEntry) {
+                                                matchEntry?.attachmentsJson
+                                                    ?.split(";;")
+                                                    ?.find { it.trim().startsWith("photo:") }
+                                                    ?.removePrefix("photo:")
+                                            }
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .aspectRatio(1f)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (matchEntry != null) WaterBlue.copy(alpha = 0.15f) else SurfaceCard)
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = if (matchEntry != null) WaterBlue else Color.Transparent,
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    )
+                                                    .clickable {
+                                                        if (matchEntry != null) {
+                                                            viewingEntry = matchEntry
+                                                        } else {
+                                                            Toast.makeText(context, "No chronicle on day $day", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (!photoPath.isNullOrEmpty()) {
+                                                    AsyncImage(
+                                                        model = if (photoPath.startsWith("http")) photoPath else File(photoPath),
+                                                        contentDescription = "Memory illustration for Day $day",
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color.Black.copy(alpha = 0.45f))
+                                                    )
+                                                }
+
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.Center
+                                                ) {
+                                                    Text(
+                                                        text = day.toString(),
+                                                        color = if (!photoPath.isNullOrEmpty()) Color.White else (if (matchEntry != null) WaterBlue else Color.White),
+                                                        fontSize = 14.sp,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        textAlign = TextAlign.Center
+                                                    )
+
+                                                    if (matchEntriesForDay.isNotEmpty()) {
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        // Row of dark blue dots indicating number of entries created that day
+                                                        Row(
+                                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            repeat(matchEntriesForDay.size.coerceAtMost(3)) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(5.dp)
+                                                                        .clip(CircleShape)
+                                                                        .background(Color(0xFF0D47A1)) // Dark Blue Dot
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            "On This Day" -> {
+                                Column {
+                                    Text(
+                                        text = "DOCUMENTED ON THIS DAY",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Gray,
+                                        modifier = Modifier.padding(bottom = 12.dp)
+                                    )
+
+                                    val currentDayMonth = SimpleDateFormat("MM-dd", Locale.US).format(Date())
+                                    val matchedAnniversaryEntries = entries.filter { it.dateString.endsWith(currentDayMonth) }
+
+                                    if (matchedAnniversaryEntries.isEmpty()) {
+                                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Text("No historical records documented on today's calendar day ($currentDayMonth).", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                        }
+                                    } else {
+                                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            items(matchedAnniversaryEntries) { entry ->
+                                                Card(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable { viewingEntry = entry },
+                                                    colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text(entry.title, fontWeight = FontWeight.ExtraBold, color = WaterBlue, fontSize = 13.sp)
+                                                            Text(entry.dateString, color = Color.Gray, fontSize = 10.sp)
+                                                        }
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Text(parseMarkdown(entry.text), color = Color.White, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            "Map View" -> {
+                                JournalMapView(
+                                    viewModel = viewModel,
+                                    entries = entries,
+                                    onEntryClick = { entry ->
+                                        viewingEntry = entry
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Floating Custom Navigation Drawer Sidebar Overlay
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSidebarExpanded,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { isSidebarExpanded = false }
+                )
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isSidebarExpanded,
+                enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { -it }),
+                exit = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { -it }),
+                modifier = Modifier.fillMaxHeight().width(300.dp).align(Alignment.CenterStart)
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(300.dp)
+                        .padding(end = 12.dp)
+                        .shadow(8.dp, RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)),
+                    colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.05f)),
+                    shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "CHRONICLES",
+                            fontWeight = FontWeight.ExtraBold,
+                            color = WaterBlue,
+                            fontSize = 18.sp,
+                            modifier = Modifier.padding(bottom = 24.dp)
+                        )
+
+                        val categories = listOf(
+                            Triple("Timeline", "📅", "Timeline View"),
+                            Triple("Monthly", "📆", "Monthly Calendar"),
+                            Triple("On This Day", "🎉", "On This Day"),
+                            Triple("Map View", "📍", "Locations Map")
+                        )
+
+                        categories.forEach { (tabId, icon, label) ->
+                            val isSelected = currentJournalTab == tabId
+                            val itemBg = if (isSelected) WaterBlue.copy(alpha = 0.15f) else Color.Transparent
+                            val itemBorder = if (isSelected) 1.dp to WaterBlue else 0.dp to Color.Transparent
+                            val textColor = if (isSelected) WaterBlue else Color.White
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(itemBg)
+                                    .border(itemBorder.first, itemBorder.second, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        currentJournalTab = tabId
+                                        viewModel.updateDefaultJournalView(tabId)
+                                        isSidebarExpanded = false
+                                    }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(icon, fontSize = 20.sp, modifier = Modifier.padding(end = 12.dp))
+                                Text(
+                                    text = label,
+                                    fontWeight = FontWeight.Bold,
+                                    color = textColor,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showGooglePhotosDialog) {
+        val syncStatus by viewModel.googlePhotosSyncStatus.collectAsState()
+        var sandboxMode by remember { mutableStateOf(true) }
+
+        AlertDialog(
+            onDismissRequest = { showGooglePhotosDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CloudSync,
+                        contentDescription = null,
+                        tint = Color(0xFF4285F4),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Google Photos Sync", color = Color.White)
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Connect Google Photos to automatically organize your journals by dates, times, and EXIF locations! Empty days will automatically create new memories with location maps, and existing ones will attach the photos.",
+                        color = Color.LightGray,
+                        fontSize = 14.sp
+                    )
+
+                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+
+                    // Sandbox Mode Toggle Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.White.copy(alpha = 0.05f))
+                            .clickable { sandboxMode = !sandboxMode }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Use Sandbox Simulator", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                            Text("Imports gorgeous pre-configured photo memories with real coordinates to quickly test this feature.", color = Color.Gray, fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = sandboxMode,
+                            onCheckedChange = { sandboxMode = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = WaterBlue,
+                                checkedTrackColor = WaterBlue.copy(alpha = 0.5f)
+                            )
+                        )
+                    }
+
+                    // Sync status display
+                    if (syncStatus != "Idle") {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (syncStatus.startsWith("Successfully") || syncStatus.startsWith("Error")) {
+                                        Icon(
+                                            imageVector = if (syncStatus.startsWith("Error")) Icons.Default.Error else Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = if (syncStatus.startsWith("Error")) Color.Red else Color.Green,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    } else {
+                                        CircularProgressIndicator(
+                                            color = WaterBlue,
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 1.5.dp
+                                        )
+                                    }
+                                    Text(
+                                        text = if (syncStatus.startsWith("Successfully")) "Sync Complete" else if (syncStatus.startsWith("Error")) "Sync Error" else "Sync Progress",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = syncStatus,
+                                    color = Color.LightGray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.syncGooglePhotos(context, sandboxMode) { authIntent ->
+                            context.startActivity(authIntent)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                    enabled = !syncStatus.startsWith("Starting") && !syncStatus.startsWith("Authorizing") && !syncStatus.startsWith("Downloading") && !syncStatus.startsWith("Retrieving")
+                ) {
+                    Text("Start Sync")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showGooglePhotosDialog = false }) {
+                    Text("Close", color = Color.Gray)
+                }
+            },
+            containerColor = SurfaceCard
+        )
+    }
+
+    // Immersive Fullscreen Reading View Page to inspect entry details with fully active multi-format inbuilt players
+    if (viewingEntry != null) {
+        val entry = viewingEntry!!
+        val attachments = remember(entry.attachmentsJson) {
+            if (entry.attachmentsJson.isNotEmpty()) entry.attachmentsJson.split(";;") else emptyList()
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Charcoal
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header Bar (Top bar with Back control, and edit/delete in top right corner!)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { viewingEntry = null }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Go Back",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Top Right buttons: edit (pencil) and delete (trash)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            try {
+                                android.util.Log.d("JournalBookView", "Pencil click initiated for entry ID: ${entry.id}")
+                                activeEditingEntryId = entry.id
+                                editingTitle = entry.title
+                                editingTextValue = androidx.compose.ui.text.input.TextFieldValue(entry.text)
+                                editingDate = entry.dateString
+                                
+                                val parsedTime = try {
+                                    val entrySdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+                                    entrySdfTime.format(Date(entry.timestamp))
+                                } catch (ex: Exception) {
+                                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                }
+                                editingTime = parsedTime
+
+                                editingAttachments = if (entry.attachmentsJson.isNotEmpty()) {
+                                    entry.attachmentsJson.split(";;")
+                                } else {
+                                    emptyList()
+                                }
+                                
+                                showEditorScreen = true
+                                viewingEntry = null
+                                android.util.Log.d("JournalBookView", "Pencil edit mode activated successfully. showEditorScreen = true")
+                            } catch (e: Exception) {
+                                android.util.Log.e("JournalBookView", "Failure switching pencil edit mode: ${e.message}", e)
+                                // Resilient failover path
+                                activeEditingEntryId = entry.id
+                                editingTitle = entry.title
+                                editingTextValue = androidx.compose.ui.text.input.TextFieldValue(entry.text)
+                                editingDate = entry.dateString
+                                editingTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                editingAttachments = emptyList()
+                                showEditorScreen = true
+                                viewingEntry = null
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Epic Chronicle",
+                                tint = WaterBlue
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            viewModel.deleteJournalEntry(entry)
+                            viewingEntry = null
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete Memory",
+                                tint = Color.Red.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Scrollable details column
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Header title/headline
+                    Text(
+                        text = if (entry.title.isNotEmpty()) entry.title else "Untitled memory",
+                        color = Color.White,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+
+                    // Date & Time, Location tags, etc.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val entrySdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        val formattedTimeStr = entrySdfTime.format(Date(entry.timestamp))
+
+                        Text(
+                            text = "${entry.dateString} at $formattedTimeStr",
+                            color = Color.Gray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        // If any location exists, show location
+                        if (entry.attachmentsJson.contains("loc:")) {
+                            val cleanLoc = entry.attachmentsJson
+                                .split(";;")
+                                .find { it.trim().startsWith("loc:") }
+                                ?.removePrefix("loc:")
+                                ?.split("|coords:")
+                                ?.getOrNull(0) ?: ""
+                            if (cleanLoc.isNotEmpty()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        try {
+                                            val fullLocStr = entry.attachmentsJson
+                                                .split(";;")
+                                                .find { it.trim().startsWith("loc:") } ?: ""
+                                            val parts = fullLocStr.removePrefix("loc:").split("|coords:")
+                                            val address = parts.getOrNull(0)?.trim() ?: ""
+                                            val coords = parts.getOrNull(1)?.trim() ?: ""
+                                            
+                                            val uriString = if (coords.isNotEmpty()) {
+                                                "https://www.google.com/maps/search/?api=1&query=$coords"
+                                            } else {
+                                                "https://www.google.com/maps/search/?api=1&query=${android.net.Uri.encode(address)}"
+                                            }
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uriString)).apply {
+                                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("JournalBookView", "Failed to open Google Maps", e)
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = null,
+                                        tint = WaterBlue,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = cleanLoc,
+                                        color = WaterBlue,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFF262626), thickness = 1.dp)
+
+                    // Description text wordings
+                    if (entry.text.isNotEmpty()) {
+                        Text(
+                            text = parseMarkdown(entry.text),
+                            color = Color.LightGray,
+                            fontSize = 16.sp,
+                            lineHeight = 24.sp
+                        )
+                    } else {
+                        // User requested "if no wording just leave a space ..."
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Media and files showing up AFTER the description wordings!
+                    attachments.forEach { attach ->
+                        JournalMediaItem(
+                            context = context,
+                            attach = attach,
+                            isEditing = false,
+                            onDelete = {
+                                val newList = attachments.filter { it != attach }
+                                val updated = entry.copy(attachmentsJson = newList.joinToString(";;"))
+                                viewModel.updateJournalEntry(updated)
+                                viewingEntry = updated
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Location lookup helper
+private fun getCityNameFromCoords(context: Context, latitude: Double, longitude: Double): String {
+    val isDemoAustin = Math.abs(latitude - 30.2672) < 0.1 && Math.abs(longitude - (-97.7431)) < 0.1
+    if (isDemoAustin) {
+        return "Guntur, Andhra Pradesh"
+    }
+
+    try {
+        if (android.location.Geocoder.isPresent()) {
+            val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
+            @Suppress("DEPRECATION")
+            val addresses = geocoder.getFromLocation(latitude, longitude, 1)
+            if (!addresses.isNullOrEmpty()) {
+                val address = addresses[0]
+                val city = address.locality ?: address.subAdminArea ?: address.adminArea
+                val state = address.adminArea
+                if (city != null) {
+                    return if (state != null) "$city, $state" else city
+                }
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return "Guntur, Andhra Pradesh"
+}
+
+private fun triggerFetchLocation(context: Context, onLocationFound: (latitude: Double, longitude: Double, name: String) -> Unit) {
+    if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        onLocationFound(16.3067, 80.4365, "Guntur, Andhra Pradesh")
+        return
+    }
+
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    if (locationManager == null) {
+        onLocationFound(16.3067, 80.4365, "Guntur, Andhra Pradesh")
+        return
+    }
+
+    try {
+        val providers = locationManager.getProviders(true)
+        var lastLoc: Location? = null
+        for (provider in providers) {
+            val loc = locationManager.getLastKnownLocation(provider) ?: continue
+            if (lastLoc == null || loc.accuracy < lastLoc.accuracy) {
+                lastLoc = loc
+            }
+        }
+
+        if (lastLoc != null) {
+            val cityName = getCityNameFromCoords(context, lastLoc.latitude, lastLoc.longitude)
+            onLocationFound(lastLoc.latitude, lastLoc.longitude, cityName)
+        } else {
+            locationManager.requestSingleUpdate(
+                LocationManager.GPS_PROVIDER,
+                object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        val cityName = getCityNameFromCoords(context, location.latitude, location.longitude)
+                        onLocationFound(location.latitude, location.longitude, cityName)
+                    }
+                    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {}
+                },
+                null
+            )
+            onLocationFound(16.3067, 80.4365, "Guntur, Andhra Pradesh")
+        }
+    } catch (e: SecurityException) {
+        onLocationFound(16.3067, 80.4365, "Guntur, Andhra Pradesh")
+    } catch (e: Exception) {
+        onLocationFound(11.6643, 78.1460, "Salem, Tamil Nadu")
+    }
+}
+
+// Document sandbox copy utility
+private fun copyFileToInternalSandbox(context: Context, uri: Uri): File? {
+    return com.example.util.StorageHelper.copyFileToInternalSandbox(context, uri)
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun JournalMediaItem(
+    context: android.content.Context,
+    attach: String,
+    isEditing: Boolean,
+    onDelete: () -> Unit
+) {
+    var showOptionsDialog by remember { mutableStateOf(false) }
+    val path = remember(attach) {
+        when {
+            attach.startsWith("photo:") -> attach.removePrefix("photo:")
+            attach.startsWith("video:") -> attach.removePrefix("video:")
+            attach.startsWith("audio:") -> attach.removePrefix("audio:")
+            attach.startsWith("file:") -> {
+                val filePart = attach.removePrefix("file:").split("|path:")
+                filePart.getOrNull(1) ?: ""
+            }
+            else -> ""
+        }
+    }
+    val isWebUrl = remember(path) { path.startsWith("http://") || path.startsWith("https://") }
+    val file = remember(path, isWebUrl) { if (isWebUrl) java.io.File("") else java.io.File(path) }
+    val displayName = remember(file, attach, isWebUrl) { 
+        if (attach.startsWith("file:")) {
+            val filePart = attach.removePrefix("file:").split("|path:")
+            filePart.getOrNull(0) ?: "Attached Document"
+        } else if (isWebUrl) {
+            path.substringAfterLast("/").substringBefore("?")
+        } else {
+            file.name.substringAfter("doc_").substringAfter("_")
+        }
+    }
+
+    if (showOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showOptionsDialog = false },
+            title = { Text("Attachment Options", color = Color.White) },
+            text = { Text("Choose action for '$displayName':", color = Color.LightGray) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showOptionsDialog = false
+                        if (isWebUrl) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(path)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Failed to open link: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            val success = saveFileToDownloads(context, file, displayName)
+                            if (success) {
+                                Toast.makeText(context, "Saved successfully to Downloads folder!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "Save failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
+                ) {
+                    Text(if (isWebUrl) "Open in Browser" else "Save to Device")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showOptionsDialog = false
+                        onDelete()
+                    }
+                ) {
+                    Text("Delete", color = Color.Red)
+                }
+            },
+            containerColor = SurfaceCard
+        )
+    }
+
+    when {
+        attach.startsWith("photo:") -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(
+                        onClick = {
+                            try {
+                                if (isWebUrl) {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(path)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } else {
+                                    val authority = "com.example.fileprovider"
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(uri, "image/*")
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Open Photo"))
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Open failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onLongClick = {
+                            showOptionsDialog = true
+                        }
+                    ),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+            ) {
+                Box {
+                    AsyncImage(
+                        model = if (isWebUrl) path else file,
+                        contentDescription = "Attached photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(200.dp)
+                    )
+                    if (isEditing) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                .size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Delete Attachment", tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        attach.startsWith("video:") -> {
+            var requestedVideoPlay by remember { mutableStateOf(false) }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(
+                        onClick = {
+                            requestedVideoPlay = true
+                        },
+                        onLongClick = {
+                            showOptionsDialog = true
+                        }
+                    ),
+                colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+            ) {
+                Box {
+                    if (!requestedVideoPlay || isEditing) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .background(Color.Black),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.25f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Play video",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                        var videoPosition by remember { mutableStateOf(0) }
+                        var isBackgrounded by remember { mutableStateOf(false) }
+                        var videoViewReference by remember { mutableStateOf<VideoView?>(null) }
+
+                        DisposableEffect(lifecycleOwner) {
+                            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                                    videoViewReference?.let { vv ->
+                                        if (vv.isPlaying) {
+                                            videoPosition = vv.currentPosition
+                                            vv.pause()
+                                            isBackgrounded = true
+                                            com.example.util.BackgroundMediaManager.play(path, videoPosition)
+                                        }
+                                    }
+                                } else if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
+                                    if (isBackgrounded) {
+                                        isBackgrounded = false
+                                        val bgPath = com.example.util.BackgroundMediaManager.currentPlayingPath.value
+                                        if (bgPath == path) {
+                                            val currentBgPos = com.example.util.BackgroundMediaManager.getCurrentPosition()
+                                            com.example.util.BackgroundMediaManager.stop()
+                                            videoViewReference?.let { vv ->
+                                                vv.seekTo(currentBgPos)
+                                                vv.start()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            lifecycleOwner.lifecycle.addObserver(observer)
+                            onDispose {
+                                lifecycleOwner.lifecycle.removeObserver(observer)
+                            }
+                        }
+
+                        AndroidView(
+                            factory = { ctx ->
+                                VideoView(ctx).apply {
+                                    setVideoPath(path)
+                                    val mc = MediaController(ctx)
+                                    mc.setAnchorView(this)
+                                    setMediaController(mc)
+                                    videoViewReference = this
+                                    start()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                        )
+                    }
+                    if (isEditing) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                .size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Delete Attachment", tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        attach.startsWith("audio:") -> {
+            val globalPlayingPath by com.example.util.BackgroundMediaManager.currentPlayingPath.collectAsState()
+            val globalIsPlaying by com.example.util.BackgroundMediaManager.isPlaying.collectAsState()
+
+            val playPath = remember(path) {
+                val sourceFile = File(path)
+                if (sourceFile.exists() && MediaCompressionHelper.isGzipFile(sourceFile)) {
+                    val tempPlayFile = File(context.cacheDir, "play_decompressed_${sourceFile.name.removeSuffix(".gz")}")
+                    if (!tempPlayFile.exists() || tempPlayFile.length() == 0L) {
+                        MediaCompressionHelper.decompressFileGzip(sourceFile, tempPlayFile)
+                    }
+                    tempPlayFile.absolutePath
+                } else {
+                    path
+                }
+            }
+
+            val isPlayingMusic = (globalPlayingPath == playPath && globalIsPlaying)
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(
+                        onClick = {
+                            if (isPlayingMusic) {
+                                com.example.util.BackgroundMediaManager.pause()
+                            } else {
+                                if (globalPlayingPath == playPath) {
+                                    com.example.util.BackgroundMediaManager.resume()
+                                } else {
+                                    com.example.util.BackgroundMediaManager.play(playPath)
+                                }
+                            }
+                        },
+                        onLongClick = {
+                            showOptionsDialog = true
+                        }
+                    ),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1D2C42))
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlayingMusic) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = WaterBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+
+                        Column {
+                            Text("Audio Voice Note Playback", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(displayName, color = Color.LightGray, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+
+                    if (isEditing) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
+                        }
+                    }
+                }
+            }
+        }
+
+        attach.startsWith("file:") -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(
+                        onClick = {
+                            try {
+                                val authority = "com.example.fileprovider"
+                                val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, context.contentResolver.getType(uri) ?: "*/*")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Open File"))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Open failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onLongClick = {
+                            showOptionsDialog = true
+                        }
+                    ),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1D2C42))
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.FileOpen, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(24.dp))
+                        Column {
+                            Text(displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("${file.length() / 1024} KB • Hold for options", color = Color.LightGray, fontSize = 9.sp)
+                        }
+                    }
+
+                    if (isEditing) {
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun saveFileToDownloads(context: android.content.Context, sourceFile: java.io.File, displayName: String): Boolean {
+    return try {
+        val resolver = context.contentResolver
+        val contentValues = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, displayName)
+            val ext = displayName.substringAfterLast('.', "").lowercase()
+            val mime = when (ext) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "gif" -> "image/gif"
+                "webp" -> "image/webp"
+                "mp4" -> "video/mp4"
+                "3gp" -> "video/3gp"
+                "mkv" -> "video/x-matroska"
+                "mp3" -> "audio/mpeg"
+                "wav" -> "audio/wav"
+                "m4a" -> "audio/mp4"
+                "pdf" -> "application/pdf"
+                else -> "application/octet-stream"
+            }
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mime)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            }
+        }
+        val uri = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+        } else {
+            null
+        }
+        if (uri != null) {
+            resolver.openOutputStream(uri)?.use { out ->
+                sourceFile.inputStream().use { input ->
+                    input.copyTo(out)
+                }
+            }
+            true
+        } else {
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            if (!downloadsDir.exists()) downloadsDir.mkdirs()
+            val destFile = java.io.File(downloadsDir, displayName)
+            sourceFile.inputStream().use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            true
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
+    }
+}
+
+@Composable
+fun JournalMapView(
+    viewModel: AppViewModel,
+    entries: List<JournalEntry>,
+    onEntryClick: (JournalEntry) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var mapType by remember { mutableStateOf("Dark Canvas") }
+    var searchQuery by remember { mutableStateOf("") }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    // Extract all entries with location coordinates
+    data class EntryMarker(
+        val entry: JournalEntry,
+        val title: String,
+        val cityName: String,
+        val lat: Double,
+        val lng: Double
+    )
+
+    val markers = remember(entries) {
+        entries.mapNotNull { entry ->
+            if (entry.attachmentsJson.contains("loc:")) {
+                val part = entry.attachmentsJson.split(";;").find { it.trim().startsWith("loc:") }
+                if (part != null) {
+                    val cleanLoc = part.removePrefix("loc:")
+                    val parts = cleanLoc.split("|coords:")
+                    val cityName = parts.getOrNull(0) ?: ""
+                    val coords = parts.getOrNull(1)?.split(",")
+                    val lat = coords?.getOrNull(0)?.toDoubleOrNull()
+                    val lng = coords?.getOrNull(1)?.toDoubleOrNull()
+                    if (lat != null && lng != null) {
+                        EntryMarker(entry, entry.title, cityName, lat, lng)
+                    } else null
+                } else null
+            } else null
+        }
+    }
+
+    val htmlContent = remember(markers, mapType) {
+        val markersJs = StringBuilder()
+        markers.forEach { marker ->
+            val escapedTitle = marker.title.replace("'", "\\'")
+            val escapedCity = marker.cityName.replace("'", "\\'")
+            val snippet = if (marker.entry.text.length > 80) marker.entry.text.take(80) + "..." else marker.entry.text
+            val escapedSnippet = snippet.replace("'", "\\'").replace("\n", " ").replace("\r", " ")
+            val date = marker.entry.dateString
+            markersJs.append("addMarker(${marker.entry.id}, '$escapedTitle', '$escapedCity', '$escapedSnippet', '$date', ${marker.lat}, ${marker.lng});\n")
+        }
+
+        val tileLayerUrl = when (mapType) {
+            "Google Roadmap" -> "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+            "Google Satellite" -> "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
+            else -> "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        }
+
+        val attribution = when (mapType) {
+            "Google Roadmap", "Google Satellite" -> "&copy; Google Maps"
+            else -> "&copy; OpenStreetMap &copy; CartoDB"
+        }
+
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <style>
+                html, body, #map { height: 100%; margin: 0; padding: 0; background: #070709; }
+                .leaflet-popup-content-wrapper {
+                    background: #121214 !important;
+                    color: #FFFFFF !important;
+                    border-radius: 12px;
+                    font-family: sans-serif;
+                    border: 1px solid #1a8a9d;
+                    padding: 4px;
+                }
+                .leaflet-popup-tip {
+                    background: #121214 !important;
+                }
+                .popup-title {
+                    font-weight: bold;
+                    color: #00D2FF;
+                    font-size: 14px;
+                    margin-bottom: 2px;
+                }
+                .popup-city {
+                    font-size: 10px;
+                    color: #888888;
+                    margin-bottom: 6px;
+                }
+                .popup-snippet {
+                    font-size: 11px;
+                    color: #CCCCCC;
+                    margin-bottom: 10px;
+                    line-height: 1.3;
+                }
+                .popup-btn {
+                    background: #00D2FF;
+                    color: #000000;
+                    border: none;
+                    padding: 6px 12px;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    width: 100%;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                }
+            </style>
+        </head>
+        <body>
+            <div id="map"></div>
+            <script>
+                var map = L.map('map', { zoomControl: false }).setView([20.0, 0.0], 2);
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+                L.tileLayer('$tileLayerUrl', {
+                    attribution: '$attribution',
+                    maxZoom: 20
+                }).addTo(map);
+
+                var markersGroup = L.featureGroup().addTo(map);
+
+                function addMarker(id, title, city, snippet, date, lat, lng) {
+                    var popupContent = `
+                        <div class="popup-title">${"$"}{title}</div>
+                        <div class="popup-city">${"$"}{city} • ${"$"}{date}</div>
+                        <div class="popup-snippet">${"$"}{snippet}</div>
+                        <button class="popup-btn" onclick="Android.openJournal(${"$"}{id})">VIEW JOURNAL</button>
+                    `;
+                    var marker = L.marker([lat, lng]).addTo(markersGroup);
+                    marker.bindPopup(popupContent);
+                }
+
+                $markersJs
+
+                if (markersGroup.getLayers().length > 0) {
+                    map.fitBounds(markersGroup.getBounds().pad(0.2));
+                }
+
+                function focusMarker(lat, lng) {
+                    map.setView([lat, lng], 13);
+                    markersGroup.eachLayer(function(marker) {
+                        if (Math.abs(marker.getLatLng().lat - lat) < 0.0001 && Math.abs(marker.getLatLng().lng - lng) < 0.0001) {
+                            marker.openPopup();
+                        }
+                    });
+                }
+
+                function centerAt(lat, lng) {
+                    map.setView([lat, lng], 12);
+                }
+            </script>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    LaunchedEffect(htmlContent) {
+        webViewRef?.loadDataWithBaseURL("https://appassets.androidplatform.net", htmlContent, "text/html", "UTF-8", null)
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF070709))
+    ) {
+        // Map Controls Header
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "JOURNAL LOCATIONS MAP",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Track your life events visually on an interactive Google Map canvas.",
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                // Search Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search city, country or coordinates...", color = Color.Gray, fontSize = 11.sp) },
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.LightGray,
+                            focusedContainerColor = Color(0xFF222225),
+                            unfocusedContainerColor = Color(0xFF1C1C1E),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .testTag("map_search_input")
+                    )
+
+                    Button(
+                        onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                performGeocoding(context, searchQuery) { lat, lng, _ ->
+                                    webViewRef?.evaluateJavascript("centerAt($lat, $lng)", null)
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(44.dp).testTag("map_search_btn")
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = "Search map", modifier = Modifier.size(16.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Map Style Switcher Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("Style:", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    listOf("Dark Canvas", "Google Roadmap", "Google Satellite").forEach { type ->
+                        val isSelected = mapType == type
+                        val bg = if (isSelected) WaterBlue else Color(0xFF222225)
+                        val textCol = if (isSelected) Color.Black else Color.White
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(bg)
+                                .clickable { mapType = type }
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .testTag("map_style_${type.replace(" ", "_").lowercase()}")
+                        ) {
+                            Text(
+                                text = type.uppercase(),
+                                color = textCol,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // WebView Map Container
+        Box(
+            modifier = Modifier
+                .weight(1.3f)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .border(androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f)), RoundedCornerShape(12.dp))
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        webViewClient = WebViewClient()
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        addJavascriptInterface(object {
+                            @JavascriptInterface
+                            fun openJournal(id: Int) {
+                                val found = entries.find { it.id == id }
+                                if (found != null) {
+                                    onEntryClick(found)
+                                }
+                            }
+                        }, "Android")
+                        webViewRef = this
+                        loadDataWithBaseURL("https://appassets.androidplatform.net", htmlContent, "text/html", "UTF-8", null)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        // Horizontal List of Documented Locations for Quick Centering/Panning
+        if (markers.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "DOCUMENTED PLACES (${markers.size})",
+                color = Color.Gray,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            )
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+            ) {
+                items(markers) { marker ->
+                    Card(
+                        modifier = Modifier
+                            .width(160.dp)
+                            .clickable {
+                                webViewRef?.evaluateJavascript("focusMarker(${marker.lat}, ${marker.lng})", null)
+                            }
+                            .testTag("map_marker_card_${marker.entry.id}"),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    tint = WaterBlue,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = marker.cityName,
+                                    color = WaterBlue,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = marker.title,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = marker.entry.dateString,
+                                color = Color.Gray,
+                                fontSize = 9.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .weight(0.3f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No journal entries have locations tagged yet.\nWrite a journal entry and click the GPS pin icon to add a location!",
+                    color = Color.Gray,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+private fun performGeocoding(
+    context: Context,
+    query: String,
+    onResult: (Double, Double, String) -> Unit
+) {
+    if (query.trim().isEmpty()) return
+    try {
+        if (android.location.Geocoder.isPresent()) {
+            val geocoder = android.location.Geocoder(context, java.util.Locale.getDefault())
+            @Suppress("DEPRECATION")
+            val addresses = geocoder.getFromLocationName(query, 1)
+            if (!addresses.isNullOrEmpty()) {
+                val addr = addresses[0]
+                onResult(addr.latitude, addr.longitude, addr.locality ?: addr.featureName ?: query)
+            } else {
+                Toast.makeText(context, "Location \"$query\" not found", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            // Geocoder is not present, check if it's coordinates "lat,lng" format
+            val parts = query.split(",")
+            val lat = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
+            val lng = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
+            if (lat != null && lng != null) {
+                onResult(lat, lng, query)
+            } else {
+                Toast.makeText(context, "Geocoder unavailable on this emulator", Toast.LENGTH_SHORT).show()
+            }
+        }
+    } catch (e: Exception) {
+        // Fallback to lat,lng parsing if search is formatted as coordinate
+        val parts = query.split(",")
+        val lat = parts.getOrNull(0)?.trim()?.toDoubleOrNull()
+        val lng = parts.getOrNull(1)?.trim()?.toDoubleOrNull()
+        if (lat != null && lng != null) {
+            onResult(lat, lng, query)
+        } else {
+            Toast.makeText(context, "Search error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
