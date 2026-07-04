@@ -75,6 +75,42 @@ android {
           }
         }
       }
+
+      if (!isKeystoreValid) {
+        try {
+          println("DEBUG: No valid debug.keystore found. Generating a brand new one using keytool...")
+          if (kFile.exists()) {
+            kFile.delete()
+          }
+          val pb = ProcessBuilder(
+            "keytool", "-genkey", "-v",
+            "-keystore", kFile.absolutePath,
+            "-storepass", "android",
+            "-alias", "androiddebugkey",
+            "-keypass", "android",
+            "-keyalg", "RSA",
+            "-keysize", "2048",
+            "-validity", "10000",
+            "-dname", "CN=Android Debug,O=Android,C=US",
+            "-storetype", "PKCS12"
+          )
+          val proc = pb.redirectErrorStream(true).start()
+          val output = proc.inputStream.bufferedReader().use { it.readText() }
+          val exitCode = proc.waitFor()
+          println("DEBUG: Keytool exit code: $exitCode")
+          println("DEBUG: Keytool output:\n$output")
+          isKeystoreValid = (exitCode == 0)
+          if (isKeystoreValid) {
+            println("DEBUG: Successfully generated brand new debug.keystore on the fly!")
+          } else {
+            println("DEBUG: Keytool generation failed!")
+          }
+        } catch (e: Exception) {
+          println("DEBUG: Failed to generate debug.keystore: ${e.message}")
+          e.printStackTrace()
+        }
+      }
+
       storeFile = kFile
       storePassword = "android"
       keyAlias = "androiddebugkey"

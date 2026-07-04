@@ -79,6 +79,12 @@ jobs:
           if [ -f "debug.keystore.base64" ]; then
             echo "Found debug.keystore.base64 in repository, decoding..."
             cat debug.keystore.base64 | tr -d '\r\n[:space:]' | base64 --decode > debug.keystore
+            echo "debug.keystore recreated from repository successfully."
+            echo "File size: $(wc -c < debug.keystore) bytes."
+            echo "=== DIAGNOSTICS: Testing Fallback Keystore with Keytool ==="
+            keytool -list -keystore debug.keystore -storepass android || echo "FAILED to list with android storepass"
+            keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey || echo "FAILED to read androiddebugkey key"
+            echo "=========================================================="
           else
             echo "ERROR: No keystore or base64 file found. Build will likely fail."
           fi
@@ -89,6 +95,10 @@ jobs:
           base64 --decode debug.keystore.base64 > debug.keystore
           echo "debug.keystore recreated successfully."
           echo "File size: $(wc -c < debug.keystore) bytes."
+          echo "=== DIAGNOSTICS: Testing Keystore with Keytool ==="
+          keytool -list -keystore debug.keystore -storepass android || echo "FAILED to list with android storepass"
+          keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey || echo "FAILED to read androiddebugkey key"
+          echo "=================================================="
         fi
 
     - name: Compile Automated Release APK
