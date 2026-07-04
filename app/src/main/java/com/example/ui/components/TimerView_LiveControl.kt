@@ -108,11 +108,6 @@ fun TimerLiveControlContent(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (waterReminderEnabled) {
-                WaterReminderBanner(viewModel = viewModel)
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
             // Numeric display unified for both Timer and Stopwatch
             Box(
                 modifier = Modifier.padding(vertical = 16.dp),

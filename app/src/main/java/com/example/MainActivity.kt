@@ -82,6 +82,11 @@ class MainActivity : ComponentActivity() {
     private val interceptedAppSessionQuery = androidx.compose.runtime.mutableStateOf<String?>(null)
     private val isDbReady = androidx.compose.runtime.mutableStateOf(false)
 
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        viewModel.recordUserInteraction(applicationContext)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -1356,6 +1361,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        viewModel.trackSleepFromDeviceUsage(applicationContext)
     }
 
     override fun onStop() {

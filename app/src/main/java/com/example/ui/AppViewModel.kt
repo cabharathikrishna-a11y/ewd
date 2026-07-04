@@ -6667,6 +6667,46 @@ class AppViewModel(application: Application, private val repository: LocalReposi
             }
         }
     }
+
+    fun recordUserInteraction(context: android.content.Context) {
+        val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putLong("last_device_active_timestamp", System.currentTimeMillis()).apply()
+    }
+
+    fun trackSleepFromDeviceUsage(context: android.content.Context) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            val lastActive = prefs.getLong("last_device_active_timestamp", 0L)
+            if (lastActive <= 0L) return@launch
+
+            val now = System.currentTimeMillis()
+            val todayStr = getCurrentDateString()
+            val lastCalcDate = prefs.getString("last_calculated_sleep_date", "")
+
+            if (lastCalcDate == todayStr) return@launch
+
+            val diffMs = now - lastActive
+            val diffMinutes = (diffMs / (1000 * 60)).toInt()
+
+            if (diffMinutes in 120..900) {
+                updateHealthMetric(sleepMinutes = diffMinutes)
+                
+                prefs.edit()
+                    .putString("last_calculated_sleep_date", todayStr)
+                    .putLong("calculated_sleep_start_timestamp", lastActive)
+                    .putLong("calculated_sleep_end_timestamp", now)
+                    .apply()
+                
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Auto-detected sleep: ${diffMinutes / 60}h ${diffMinutes % 60}m based on device usage!",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
 }
 
 data class GlobalSearchResult(

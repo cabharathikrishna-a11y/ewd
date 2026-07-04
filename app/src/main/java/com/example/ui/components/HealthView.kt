@@ -8,6 +8,7 @@ import android.hardware.SensorManager
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -64,6 +65,7 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
     // Screen Sub-Tabs: 0 = Summary, 1 = Trends & Analytics, 2 = Google Cloud Sync
     var selectedSubTab by remember { mutableIntStateOf(0) }
+    var showStepsDetails by remember { mutableStateOf(false) }
 
     // Dialog state controllers
     var showManualLogDialog by remember { mutableStateOf(false) }
@@ -119,11 +121,18 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             .background(Color(0xFF07080F))
             .testTag("health_view_container")
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp)
-        ) {
+        if (showStepsDetails) {
+            StepsDetailsPage(
+                viewModel = viewModel,
+                record = record,
+                onBack = { showStepsDetails = false }
+            )
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
             // Screen Header
             Row(
                 modifier = Modifier
@@ -284,6 +293,7 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             ) {
                 when (selectedSubTab) {
                     0 -> SummaryTab(
+                        viewModel = viewModel,
                         record = record,
                         onLogMetric = { metric ->
                             metricToLog = metric
@@ -292,7 +302,8 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         onWaterIncrement = { amountMl ->
                             val currentWater = record.waterMl
                             viewModel.updateHealthMetric(waterMl = currentWater + amountMl)
-                        }
+                        },
+                        onStepsClick = { showStepsDetails = true }
                     )
                     1 -> TrendsTab(allRecords = allRecords)
                     2 -> GoogleSyncTab(
@@ -317,11 +328,36 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             }
         }
     }
+}
 
     // Manual Log Dialog modal
     if (showManualLogDialog) {
-        var inputValue by remember { mutableStateOf("") }
-        var inputGoalValue by remember { mutableStateOf("") }
+        var inputValue by remember {
+            mutableStateOf(
+                when (metricToLog) {
+                    "Sleep" -> record.sleepMinutes.toString()
+                    "Calories" -> record.caloriesBurned.toString()
+                    "HeartRate" -> record.heartRateAvg.toString()
+                    else -> ""
+                }
+            )
+        }
+        var inputGoalValue by remember {
+            mutableStateOf(
+                when (metricToLog) {
+                    "Sleep" -> record.sleepGoalMinutes.toString()
+                    "Calories" -> record.calorieGoal.toString()
+                    "HeartRate" -> "130"
+                    else -> ""
+                }
+            )
+        }
+
+        // Dedicated states for sleep editing to guarantee smooth and reliable user typing experience
+        var sleepHoursString by remember { mutableStateOf((record.sleepMinutes / 60).toString()) }
+        var sleepMinsString by remember { mutableStateOf((record.sleepMinutes % 60).toString()) }
+        var sleepGoalHoursString by remember { mutableStateOf((record.sleepGoalMinutes / 60).toString()) }
+        var sleepGoalMinsString by remember { mutableStateOf((record.sleepGoalMinutes % 60).toString()) }
 
         Dialog(onDismissRequest = { showManualLogDialog = false }) {
             Surface(
@@ -364,63 +400,135 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     )
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Value Input
-                    OutlinedTextField(
-                        value = inputValue,
-                        onValueChange = { inputValue = it },
-                        label = { Text("Metric Value") },
-                        placeholder = {
-                            Text(
-                                when (metricToLog) {
-                                    "Sleep" -> "e.g., 420 (mins)"
-                                    "Calories" -> "e.g., 500 (kcal)"
-                                    else -> "e.g., 75 (bpm)"
-                                }
-                            )
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = WaterBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedLabelColor = WaterBlue,
-                            unfocusedLabelColor = Color.LightGray,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("metric_input_field")
-                    )
+                    if (metricToLog == "Sleep") {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Sleep Duration", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = sleepHoursString,
+                                    onValueChange = { sleepHoursString = it },
+                                    label = { Text("Hours") },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = WaterBlue,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = sleepMinsString,
+                                    onValueChange = { sleepMinsString = it },
+                                    label = { Text("Minutes") },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = WaterBlue,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                            }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Sleep Target / Goal", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = sleepGoalHoursString,
+                                    onValueChange = { sleepGoalHoursString = it },
+                                    label = { Text("Hours") },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = WaterBlue,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = sleepGoalMinsString,
+                                    onValueChange = { sleepGoalMinsString = it },
+                                    label = { Text("Minutes") },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = WaterBlue,
+                                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White
+                                    ),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                            }
+                        }
+                    } else {
+                        // Value Input
+                        OutlinedTextField(
+                            value = inputValue,
+                            onValueChange = { inputValue = it },
+                            label = { Text("Metric Value") },
+                            placeholder = {
+                                Text(
+                                    when (metricToLog) {
+                                        "Calories" -> "e.g., 500 (kcal)"
+                                        else -> "e.g., 75 (bpm)"
+                                    }
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = WaterBlue,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                focusedLabelColor = WaterBlue,
+                                unfocusedLabelColor = Color.LightGray,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("metric_input_field")
+                        )
 
-                    // Goal Input
-                    OutlinedTextField(
-                        value = inputGoalValue,
-                        onValueChange = { inputGoalValue = it },
-                        label = { Text("Daily Target/Goal") },
-                        placeholder = {
-                            Text(
-                                when (metricToLog) {
-                                    "Sleep" -> "e.g., 480"
-                                    "Calories" -> "e.g., 2000"
-                                    else -> "e.g., 130"
-                                }
-                            )
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = WaterBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedLabelColor = WaterBlue,
-                            unfocusedLabelColor = Color.LightGray,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("metric_goal_field")
-                    )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Goal Input
+                        OutlinedTextField(
+                            value = inputGoalValue,
+                            onValueChange = { inputGoalValue = it },
+                            label = { Text("Daily Target/Goal") },
+                            placeholder = {
+                                Text(
+                                    when (metricToLog) {
+                                        "Calories" -> "e.g., 2000"
+                                        else -> "e.g., 130"
+                                    }
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = WaterBlue,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                focusedLabelColor = WaterBlue,
+                                unfocusedLabelColor = Color.LightGray,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("metric_goal_field")
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
@@ -433,29 +541,41 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                         Button(
                             onClick = {
-                                val value = inputValue.toIntOrNull()
-                                val goal = inputGoalValue.toIntOrNull()
-                                if (value != null) {
-                                    when (metricToLog) {
- 
-                                        "Sleep" -> viewModel.updateHealthMetric(
-                                            sleepMinutes = value,
-                                            sleepGoalMinutes = goal
-                                        )
-                                        "Calories" -> viewModel.updateHealthMetric(
-                                            caloriesBurned = value,
-                                            calorieGoal = goal
-                                        )
-                                        "HeartRate" -> viewModel.updateHealthMetric(
-                                            heartRateAvg = value,
-                                            heartRateMin = (value - 15).coerceAtLeast(40),
-                                            heartRateMax = (value + 35).coerceAtMost(200)
-                                        )
-                                    }
+                                if (metricToLog == "Sleep") {
+                                    val hr = sleepHoursString.toIntOrNull() ?: 0
+                                    val min = sleepMinsString.toIntOrNull() ?: 0
+                                    val gHr = sleepGoalHoursString.toIntOrNull() ?: 0
+                                    val gMin = sleepGoalMinsString.toIntOrNull() ?: 0
+
+                                    val finalMins = hr * 60 + min
+                                    val finalGoalMins = gHr * 60 + gMin
+
+                                    viewModel.updateHealthMetric(
+                                        sleepMinutes = finalMins,
+                                        sleepGoalMinutes = finalGoalMins
+                                    )
                                     showManualLogDialog = false
-                                    Toast.makeText(context, "${metricToLog} updated!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Sleep Cycle updated!", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Please enter a valid number", Toast.LENGTH_SHORT).show()
+                                    val value = inputValue.toIntOrNull()
+                                    val goal = inputGoalValue.toIntOrNull()
+                                    if (value != null) {
+                                        when (metricToLog) {
+                                            "Calories" -> viewModel.updateHealthMetric(
+                                                caloriesBurned = value,
+                                                calorieGoal = goal
+                                            )
+                                            "HeartRate" -> viewModel.updateHealthMetric(
+                                                heartRateAvg = value,
+                                                heartRateMin = (value - 15).coerceAtLeast(40),
+                                                heartRateMax = (value + 35).coerceAtMost(200)
+                                            )
+                                        }
+                                        showManualLogDialog = false
+                                        Toast.makeText(context, "${metricToLog} updated!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Please enter a valid number", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
@@ -472,9 +592,11 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
 @Composable
 fun SummaryTab(
+    viewModel: AppViewModel,
     record: HealthRecord,
     onLogMetric: (String) -> Unit,
-    onWaterIncrement: (Int) -> Unit
+    onWaterIncrement: (Int) -> Unit,
+    onStepsClick: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -483,14 +605,76 @@ fun SummaryTab(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        // High-fidelity dynamic Ring Visualizer
+        // High-fidelity dynamic Ring Visualizer (clickable)
         item {
-            FitnessActivityRingCard(record = record)
+            Box(modifier = Modifier.clickable { onStepsClick() }) {
+                FitnessActivityRingCard(record = record)
+            }
+        }
+
+        // Clickable Steps Block
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF13141F)),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onStepsClick() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(WaterBlue.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DirectionsWalk,
+                                contentDescription = null,
+                                tint = WaterBlue,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Steps Details Tracker",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Log manual stats, target goals, & permissions",
+                                color = Color.Gray,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Navigate to steps",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
 
         // Action Quick metrics Logger
         item {
-            QuickLogIntakeCard(record = record, onWaterIncrement = onWaterIncrement)
+            QuickLogIntakeCard(
+                viewModel = viewModel,
+                record = record,
+                onWaterIncrement = onWaterIncrement
+            )
         }
 
         // Active minutes & Calories burnout details
@@ -712,7 +896,18 @@ fun FitnessActivityRingCard(record: HealthRecord) {
 }
 
 @Composable
-fun QuickLogIntakeCard(record: HealthRecord, onWaterIncrement: (Int) -> Unit) {
+fun QuickLogIntakeCard(
+    viewModel: AppViewModel,
+    record: HealthRecord,
+    onWaterIncrement: (Int) -> Unit
+) {
+    val waterReminderEnabled by viewModel.waterReminderEnabled.collectAsStateWithLifecycle()
+    val waterReminderIntervalMins by viewModel.waterReminderIntervalMins.collectAsStateWithLifecycle()
+    val waterReminderStartTime by viewModel.waterReminderStartTime.collectAsStateWithLifecycle()
+    val waterReminderEndTime by viewModel.waterReminderEndTime.collectAsStateWithLifecycle()
+
+    var showRemindersSettings by remember { mutableStateOf(false) }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF13141F)),
         shape = RoundedCornerShape(16.dp),
@@ -740,12 +935,26 @@ fun QuickLogIntakeCard(record: HealthRecord, onWaterIncrement: (Int) -> Unit) {
                         color = Color.White
                     )
                 }
-                Text(
-                    text = "${record.waterMl} / ${record.waterGoalMl} ml",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = WaterBlue
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { showRemindersSettings = !showRemindersSettings },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Water Reminders Settings",
+                            tint = if (waterReminderEnabled) WaterBlue else Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${record.waterMl} / ${record.waterGoalMl} ml",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = WaterBlue
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -799,6 +1008,112 @@ fun QuickLogIntakeCard(record: HealthRecord, onWaterIncrement: (Int) -> Unit) {
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Bottle (+500ml)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Expandable Water Reminder Settings panel directly inside the water widget!
+            if (showRemindersSettings) {
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Water Drinking Reminders",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Periodic notifications to stay hydrated",
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = waterReminderEnabled,
+                        onCheckedChange = { viewModel.updateWaterReminderEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = WaterBlue,
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                }
+
+                if (waterReminderEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Reminder Interval: ${if (waterReminderIntervalMins == 30f) "30 mins" else if (waterReminderIntervalMins == 60f) "1 hr" else if (waterReminderIntervalMins == 90f) "1.5 hrs" else if (waterReminderIntervalMins == 120f) "2 hrs" else "${waterReminderIntervalMins / 60} hrs"}",
+                            color = WaterBlue,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Slider(
+                            value = waterReminderIntervalMins,
+                            onValueChange = {
+                                val steppedValue = when {
+                                    it < 45f -> 30f
+                                    it < 75f -> 60f
+                                    it < 105f -> 90f
+                                    it < 135f -> 120f
+                                    it < 165f -> 150f
+                                    else -> 180f
+                                }
+                                viewModel.updateWaterReminderIntervalMins(steppedValue)
+                            },
+                            valueRange = 30f..180f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = WaterBlue,
+                                activeTrackColor = WaterBlue,
+                                inactiveTrackColor = Color.DarkGray
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Wake-up Time", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = waterReminderStartTime,
+                                onValueChange = { viewModel.updateWaterReminderStartTime(it) },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = WaterBlue,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Sleeping Time", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = waterReminderEndTime,
+                                onValueChange = { viewModel.updateWaterReminderEndTime(it) },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = WaterBlue,
+                                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1380,4 +1695,286 @@ fun GoogleSyncTab(
 // Utility extension helper to support safe 0.dp constraints
 private fun Int.getDpOrZero(): androidx.compose.ui.unit.Dp {
     return if (this <= 0) 0.dp else this.dp
+}
+
+@Composable
+fun StepsDetailsPage(
+    viewModel: AppViewModel,
+    record: HealthRecord,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    var inputSteps by remember { mutableStateOf(record.steps.toString()) }
+    var inputGoal by remember { mutableStateOf(record.stepGoal.toString()) }
+    var inputCalories by remember { mutableStateOf(record.caloriesBurned.toString()) }
+    var inputActiveMinutes by remember { mutableStateOf(record.activeMinutes.toString()) }
+
+    // Distance calculation: steps * 0.00075 km
+    val computedDistance = (record.steps * 0.00075f)
+
+    // Activity Recognition Permission State
+    val activityRecognitionPermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        android.Manifest.permission.ACTIVITY_RECOGNITION
+    } else {
+        null
+    }
+
+    var isPermissionGranted by remember {
+        mutableStateOf(
+            if (activityRecognitionPermission != null) {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, activityRecognitionPermission
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        isPermissionGranted = granted
+        if (granted) {
+            Toast.makeText(context, "Fitness Tracking Permission Granted! Automatic tracking active.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Permission Denied. Manual tracking mode only.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07080F))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+            ) {
+                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text("HEALTH & FITNESS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WaterBlue, letterSpacing = 2.sp)
+                Text("Steps Details Tracker", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Summary Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF121420)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("ACTIVITY SUMMARY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "${record.steps} / ${record.stepGoal} steps", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.White)
+                    Text(
+                        text = "Distance: ${String.format(java.util.Locale.US, "%.2f", computedDistance)} km | Calories: ${record.caloriesBurned} kcal",
+                        fontSize = 12.sp,
+                        color = Color.LightGray
+                    )
+                }
+                Box(modifier = Modifier.size(60.dp), contentAlignment = Alignment.Center) {
+                    val progress = if (record.stepGoal > 0) (record.steps.toFloat() / record.stepGoal.toFloat()).coerceIn(0f, 1f) else 0f
+                    CircularProgressIndicator(
+                        progress = progress,
+                        color = WaterBlue,
+                        strokeWidth = 6.dp,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Text(text = "${(progress * 100).toInt()}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Manual Input Section
+        Text(
+            text = "ENTER DETAILS MANUALLY",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = WaterBlue,
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedTextField(
+                value = inputSteps,
+                onValueChange = { inputSteps = it },
+                label = { Text("Steps Walked") },
+                placeholder = { Text("e.g., 8500") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = WaterBlue,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                    focusedLabelColor = WaterBlue,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = inputGoal,
+                onValueChange = { inputGoal = it },
+                label = { Text("Step Goal Target") },
+                placeholder = { Text("e.g., 10000") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = WaterBlue,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                    focusedLabelColor = WaterBlue,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = inputCalories,
+                        onValueChange = { inputCalories = it },
+                        label = { Text("Calories (kcal)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = WaterBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                            focusedLabelColor = WaterBlue,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = inputActiveMinutes,
+                        onValueChange = { inputActiveMinutes = it },
+                        label = { Text("Active Minutes") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = WaterBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                            focusedLabelColor = WaterBlue,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            Button(
+                onClick = {
+                    val s = inputSteps.toIntOrNull() ?: record.steps
+                    val g = inputGoal.toIntOrNull() ?: record.stepGoal
+                    val c = inputCalories.toIntOrNull() ?: record.caloriesBurned
+                    val m = inputActiveMinutes.toIntOrNull() ?: record.activeMinutes
+                    viewModel.updateHealthMetric(
+                        steps = s,
+                        stepGoal = g,
+                        caloriesBurned = c,
+                        activeMinutes = m
+                    )
+                    Toast.makeText(context, "Statistics saved manually!", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = WaterBlue)
+            ) {
+                Text("Save Manual Details", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Permission card
+        Text(
+            text = "FITNESS TRACKING PERMISSIONS",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = WaterBlue,
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.04f)),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isPermissionGranted) Icons.Default.CheckCircle else Icons.Default.Info,
+                        contentDescription = "Permission state",
+                        tint = if (isPermissionGranted) SuccessGreen else Color.Yellow,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isPermissionGranted) "Fitness Permission Granted" else "Physical Activity Permission Required",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Granting this permission allows Life OS to automatically track physical steps in the background using your device's internal step sensors.",
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = {
+                        if (activityRecognitionPermission != null) {
+                            permissionLauncher.launch(activityRecognitionPermission)
+                        } else {
+                            Toast.makeText(context, "Physical tracking is automatically active on this OS version.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isPermissionGranted) Color.White.copy(alpha = 0.1f) else WaterBlue
+                    ),
+                    enabled = !isPermissionGranted
+                ) {
+                    Text(
+                        text = if (isPermissionGranted) "Permission Active" else "Grant Fitness Tracking Permission",
+                        color = if (isPermissionGranted) Color.Gray else Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
 }
