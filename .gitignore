@@ -14,5 +14,10 @@
 .externalNativeBuild
 .cxx
 local.properties
-.env
 release.keystore
+*.keystore
+*.keystore.base64
+*.jks
+*.pepk
+.env
+.env.*
