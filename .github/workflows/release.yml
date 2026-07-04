@@ -70,6 +70,10 @@ jobs:
         echo "version_name=$NEW_VERSION_NAME" >> $GITHUB_OUTPUT
 
     # We compile the automated release APK using the dynamically determined versionCode and versionName
+    - name: Recreate Keystore File from Secret
+      run: |
+        echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" > debug.keystore.base64
+
     - name: Compile Automated Release APK
       run: ./gradlew assembleRelease -PcustomVersionCode=${{ env.VERSION_CODE }} -PcustomVersionName="${{ env.VERSION_NAME }}"
 
