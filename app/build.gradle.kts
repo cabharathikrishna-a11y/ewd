@@ -33,18 +33,20 @@ android {
       println("DEBUG: kFile path = ${kFile.absolutePath}, exists = ${kFile.exists()}")
       val base64File = rootProject.file("debug.keystore.base64")
       println("DEBUG: base64File path = ${base64File.absolutePath}, exists = ${base64File.exists()}")
-      if (base64File.exists() && base64File.length() > 0) {
-        try {
-          val base64Text = base64File.readText().replace(Regex("\\s"), "")
-          if (base64Text.isNotEmpty()) {
-            println("DEBUG: base64Text length = ${base64Text.length}")
-            val decoded = Base64.getDecoder().decode(base64Text)
-            kFile.writeBytes(decoded)
-            println("DEBUG: Decoded and wrote debug.keystore successfully! File size: ${kFile.length()}")
+      if (!kFile.exists() || kFile.length() == 0L) {
+        if (base64File.exists() && base64File.length() > 0) {
+          try {
+            val base64Text = base64File.readText().replace(Regex("\\s"), "")
+            if (base64Text.isNotEmpty()) {
+              println("DEBUG: base64Text length = ${base64Text.length}")
+              val decoded = Base64.getDecoder().decode(base64Text)
+              kFile.writeBytes(decoded)
+              println("DEBUG: Decoded and wrote debug.keystore successfully! File size: ${kFile.length()}")
+            }
+          } catch (e: Exception) {
+            println("DEBUG: Error decoding base64: ${e.message}")
+            e.printStackTrace()
           }
-        } catch (e: Exception) {
-          println("DEBUG: Error decoding base64: ${e.message}")
-          e.printStackTrace()
         }
       }
       storeFile = kFile
