@@ -21,3 +21,4 @@ release.keystore
 *.pepk
 .env
 .env.*
+!.env.example
