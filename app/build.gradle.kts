@@ -30,11 +30,19 @@ android {
   signingConfigs {
     create("release") {
       val kFile = rootProject.file("debug.keystore")
-      if (!kFile.exists()) {
-        val base64File = rootProject.file("debug.keystore.base64")
-        if (base64File.exists()) {
-          val decoded = Base64.getDecoder().decode(base64File.readText().replace(Regex("\\s"), ""))
+      println("DEBUG: kFile path = ${kFile.absolutePath}, exists = ${kFile.exists()}")
+      val base64File = rootProject.file("debug.keystore.base64")
+      println("DEBUG: base64File path = ${base64File.absolutePath}, exists = ${base64File.exists()}")
+      if (!kFile.exists() && base64File.exists()) {
+        try {
+          val base64Text = base64File.readText().replace(Regex("\\s"), "")
+          println("DEBUG: base64Text length = ${base64Text.length}")
+          val decoded = Base64.getDecoder().decode(base64Text)
           kFile.writeBytes(decoded)
+          println("DEBUG: Decoded and wrote debug.keystore successfully! File size: ${kFile.length()}")
+        } catch (e: Exception) {
+          println("DEBUG: Error decoding base64: ${e.message}")
+          e.printStackTrace()
         }
       }
       storeFile = kFile
