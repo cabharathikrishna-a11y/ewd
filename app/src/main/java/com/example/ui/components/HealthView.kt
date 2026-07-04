@@ -377,7 +377,7 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     Icon(
                         imageVector = when (metricToLog) {
                             "Sleep" -> Icons.Default.Hotel
-                            "Calories" -> Icons.Default.LocalFireDepartment
+                            "Calories" -> Icons.Default.Restaurant
                             else -> Icons.Default.Favorite
                         },
                         contentDescription = null,
@@ -386,14 +386,14 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Log ${metricToLog}",
+                        text = if (metricToLog == "Calories") "Log Food Intake" else "Log $metricToLog",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Enter your recorded health metric data point to update your local dashboard.",
+                        text = if (metricToLog == "Calories") "Enter your recorded food calories consumed to update your local nutrition goals." else "Enter your recorded health metric data point to update your local dashboard.",
                         fontSize = 12.sp,
                         color = Color.Gray,
                         textAlign = TextAlign.Center
@@ -473,11 +473,47 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             }
                         }
                     } else {
+                        if (metricToLog == "Calories") {
+                            Text(
+                                text = "QUICK ADD MEAL",
+                                color = Color.LightGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.align(Alignment.Start).padding(bottom = 8.dp)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val meals = listOf(
+                                    "Breakfast (+400)" to 400,
+                                    "Lunch (+650)" to 650,
+                                    "Dinner (+700)" to 700,
+                                    "Snack (+250)" to 250
+                                )
+                                meals.forEach { (name, kcal) ->
+                                    Button(
+                                        onClick = {
+                                            val current = inputValue.toIntOrNull() ?: 0
+                                            inputValue = (current + kcal).toString()
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue.copy(alpha = 0.15f)),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(name, color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(14.dp))
+                        }
+
                         // Value Input
                         OutlinedTextField(
                             value = inputValue,
                             onValueChange = { inputValue = it },
-                            label = { Text("Metric Value") },
+                            label = { Text(if (metricToLog == "Calories") "Calories Consumed" else "Metric Value") },
                             placeholder = {
                                 Text(
                                     when (metricToLog) {
@@ -506,7 +542,7 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         OutlinedTextField(
                             value = inputGoalValue,
                             onValueChange = { inputGoalValue = it },
-                            label = { Text("Daily Target/Goal") },
+                            label = { Text(if (metricToLog == "Calories") "Calorie Intake Goal" else "Daily Target/Goal") },
                             placeholder = {
                                 Text(
                                     when (metricToLog) {
@@ -696,12 +732,12 @@ fun SummaryTab(
                 }
                 Box(modifier = Modifier.weight(1f)) {
                     MetricDetailCard(
-                        title = "Energy Burned",
+                        title = "Food Tracker",
                         metric = "${record.caloriesBurned} kcal",
                         target = "Goal: ${record.calorieGoal} kcal",
-                        icon = Icons.Default.LocalFireDepartment,
+                        icon = Icons.Default.Restaurant,
                         progress = (record.caloriesBurned.toFloat() / record.calorieGoal.toFloat()).coerceIn(0f, 1f),
-                        color = Color(0xFFFF8A65),
+                        color = Color(0xFFFFA726),
                         onLogClick = { onLogMetric("Calories") }
                     )
                 }
@@ -1527,7 +1563,7 @@ fun TrendsTab(allRecords: List<HealthRecord>) {
                     ) {
                         Column {
                             Text(text = rec.dateString, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                            Text(text = "Sleep: ${rec.sleepMinutes / 60}h | Water: ${rec.waterMl}ml | Energy: ${rec.caloriesBurned}kcal", color = Color.Gray, fontSize = 11.sp)
+                            Text(text = "Sleep: ${rec.sleepMinutes / 60}h | Water: ${rec.waterMl}ml | Food: ${rec.caloriesBurned}kcal", color = Color.Gray, fontSize = 11.sp)
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
@@ -1590,7 +1626,7 @@ fun GoogleSyncTab(
 
                 Spacer(modifier = Modifier.height(14.dp))
                 Text(
-                    text = "Sync your personal fitness sensors securely with Google Cloud. We sync step counters, active duration, energy burnt, heart beat rate, and hydration cycles automatically.",
+                    text = "Sync your personal fitness sensors securely with Google Cloud. We sync step counters, active duration, food calorie intake, heart beat rate, and hydration cycles automatically.",
                     color = Color.LightGray,
                     fontSize = 12.sp,
                     lineHeight = 16.sp
@@ -1790,7 +1826,7 @@ fun StepsDetailsPage(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = "${record.steps} / ${record.stepGoal} steps", fontSize = 20.sp, fontWeight = FontWeight.Black, color = Color.White)
                     Text(
-                        text = "Distance: ${String.format(java.util.Locale.US, "%.2f", computedDistance)} km | Calories: ${record.caloriesBurned} kcal",
+                        text = "Distance: ${String.format(java.util.Locale.US, "%.2f", computedDistance)} km | Est. Burned: ${(record.steps * 0.04f).toInt()} kcal",
                         fontSize = 12.sp,
                         color = Color.LightGray
                     )
@@ -1860,7 +1896,7 @@ fun StepsDetailsPage(
                     OutlinedTextField(
                         value = inputCalories,
                         onValueChange = { inputCalories = it },
-                        label = { Text("Calories (kcal)") },
+                        label = { Text("Food Calories (kcal)") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = WaterBlue,
                             unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
