@@ -1,4 +1,6 @@
 import java.util.Base64
+import java.security.KeyStore
+import java.io.FileInputStream
 
 plugins {
   alias(libs.plugins.android.application)
@@ -33,15 +35,39 @@ android {
       println("DEBUG: kFile path = ${kFile.absolutePath}, exists = ${kFile.exists()}")
       val base64File = rootProject.file("debug.keystore.base64")
       println("DEBUG: base64File path = ${base64File.absolutePath}, exists = ${base64File.exists()}")
-      if (!kFile.exists() || kFile.length() == 0L) {
+      var isKeystoreValid = false
+      if (kFile.exists() && kFile.length() > 0) {
+        try {
+          val ks = KeyStore.getInstance("PKCS12")
+          FileInputStream(kFile).use { fis ->
+            ks.load(fis, "android".toCharArray())
+          }
+          isKeystoreValid = true
+          println("DEBUG: Existing debug.keystore loaded successfully and is valid!")
+        } catch (e: Exception) {
+          println("DEBUG: Existing debug.keystore is invalid or corrupted: ${e.message}")
+        }
+      }
+
+      if (!isKeystoreValid) {
         if (base64File.exists() && base64File.length() > 0) {
           try {
             val base64Text = base64File.readText().replace(Regex("\\s"), "")
             if (base64Text.isNotEmpty()) {
-              println("DEBUG: base64Text length = ${base64Text.length}")
+              println("DEBUG: Attempting to decode debug.keystore.base64 to recreate debug.keystore...")
               val decoded = Base64.getDecoder().decode(base64Text)
               kFile.writeBytes(decoded)
               println("DEBUG: Decoded and wrote debug.keystore successfully! File size: ${kFile.length()}")
+              try {
+                val ks = KeyStore.getInstance("PKCS12")
+                FileInputStream(kFile).use { fis ->
+                  ks.load(fis, "android".toCharArray())
+                }
+                isKeystoreValid = true
+                println("DEBUG: Decoded debug.keystore verified successfully!")
+              } catch (ev: Exception) {
+                println("DEBUG: Decoded keystore is still invalid! Error: ${ev.message}")
+              }
             }
           } catch (e: Exception) {
             println("DEBUG: Error decoding base64: ${e.message}")
