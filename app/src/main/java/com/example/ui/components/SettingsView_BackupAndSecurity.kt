@@ -50,6 +50,21 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
     val prefs = remember { context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE) }
     var lastSyncTs by remember { mutableStateOf(prefs.getLong("gd_all_last_sync_timestamp", 0L)) }
 
+    var optTasks by remember { mutableStateOf(prefs.getBoolean("backup_option_tasks", true)) }
+    var optHabits by remember { mutableStateOf(prefs.getBoolean("backup_option_habits", true)) }
+    var optJournal by remember { mutableStateOf(prefs.getBoolean("backup_option_journal", true)) }
+    var optFinances by remember { mutableStateOf(prefs.getBoolean("backup_option_finances", true)) }
+    var optContacts by remember { mutableStateOf(prefs.getBoolean("backup_option_contacts", true)) }
+    var optFiles by remember { mutableStateOf(prefs.getBoolean("backup_option_files", true)) }
+    var optSettings by remember { mutableStateOf(prefs.getBoolean("backup_option_settings", true)) }
+    var optHealth by remember { mutableStateOf(prefs.getBoolean("backup_option_health", true)) }
+    var optNotes by remember { mutableStateOf(prefs.getBoolean("backup_option_notes", true)) }
+    var optFocus by remember { mutableStateOf(prefs.getBoolean("backup_option_focus", true)) }
+
+    fun updateBackupOption(key: String, value: Boolean) {
+        prefs.edit().putBoolean(key, value).apply()
+    }
+
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -252,6 +267,81 @@ fun LifeOSBackupSection(viewModel: AppViewModel) {
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+        HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp)
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // --- BACKUP CATEGORIES SELECTION ---
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF141419)),
+            border = androidx.compose.foundation.BorderStroke(1.dp, WaterBlue.copy(alpha = 0.25f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Backup Options",
+                        tint = WaterBlue,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Configure Backup Options",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+
+                Text(
+                    text = "Select which categories should be exported in manual snapshots or synchronized to Google Drive:",
+                    color = Color.LightGray,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+
+                val items = listOf(
+                    Triple("Tasks, Custom Lists & Deadlines", optTasks) { v: Boolean -> optTasks = v; updateBackupOption("backup_option_tasks", v) },
+                    Triple("Habits & Streak Completions", optHabits) { v: Boolean -> optHabits = v; updateBackupOption("backup_option_habits", v) },
+                    Triple("Journal Texts & Entries", optJournal) { v: Boolean -> optJournal = v; updateBackupOption("backup_option_journal", v) },
+                    Triple("Finance Accounts, Ledger & Transactions", optFinances) { v: Boolean -> optFinances = v; updateBackupOption("backup_option_finances", v) },
+                    Triple("Contacts & Folders", optContacts) { v: Boolean -> optContacts = v; updateBackupOption("backup_option_contacts", v) },
+                    Triple("Local Files & Documents (PDF/Word/Excel)", optFiles) { v: Boolean -> optFiles = v; updateBackupOption("backup_option_files", v) },
+                    Triple("App Configuration & Shared Preferences", optSettings) { v: Boolean -> optSettings = v; updateBackupOption("backup_option_settings", v) },
+                    Triple("Health & Fitness Records (Steps, Water, Food Diary)", optHealth) { v: Boolean -> optHealth = v; updateBackupOption("backup_option_health", v) },
+                    Triple("Pinned & Personal Keep Notes", optNotes) { v: Boolean -> optNotes = v; updateBackupOption("backup_option_notes", v) },
+                    Triple("Focus Session History Log", optFocus) { v: Boolean -> optFocus = v; updateBackupOption("backup_option_focus", v) }
+                )
+
+                items.forEach { (label, value, onValueChange) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onValueChange(!value) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(label, color = Color.LightGray, fontSize = 12.sp)
+                        Switch(
+                            checked = value,
+                            onCheckedChange = onValueChange,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = WaterBlue,
+                                checkedTrackColor = WaterBlue.copy(alpha = 0.4f)
+                            )
+                        )
+                    }
                 }
             }
         }

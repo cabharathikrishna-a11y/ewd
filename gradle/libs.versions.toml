@@ -37,6 +37,7 @@ datastorePreferences = "1.1.7"
 robolectric = "4.16.1"
 roborazzi = "1.59.0"
 firebaseBom = "34.15.0"
+mapsforge = "0.20.0"
 googleServices = "4.4.1"
 firebasePerf = "2.0.6"
 secretsGradlePlugin = "2.0.1"
@@ -103,6 +104,9 @@ firebase-inappmessaging-display = { group = "com.google.firebase", name = "fireb
 firebase-appdistribution = { group = "com.google.firebase", name = "firebase-appdistribution", version = "16.0.0-beta13" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version = "21.2.0" }
 mediapipe-tasks-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "tasksGenai" }
+mapsforge-map-android = { group = "org.mapsforge", name = "mapsforge-map-android", version.ref = "mapsforge" }
+mapsforge-map = { group = "org.mapsforge", name = "mapsforge-map", version.ref = "mapsforge" }
+mapsforge-themes = { group = "org.mapsforge", name = "mapsforge-themes", version.ref = "mapsforge" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

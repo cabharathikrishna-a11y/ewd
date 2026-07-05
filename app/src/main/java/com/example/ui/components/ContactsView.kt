@@ -35,6 +35,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.util.rememberVideoThumbnail
+import com.example.util.rememberPdfFirstPagePreview
+import androidx.compose.foundation.Image
 import com.example.data.Contact
 import com.example.ui.AppViewModel
 import com.example.ui.theme.Charcoal
@@ -730,7 +733,11 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         )
                                     }
 
-                                    if (isPhoto) {
+                                    val ext = file.extension.lowercase()
+                                    val isVideo = ext == "mp4" || ext == "mov" || ext == "3gp" || ext == "mkv"
+                                    val isPdf = ext == "pdf"
+
+                                    if (isPhoto || isVideo || isPdf) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -743,10 +750,11 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                             val authority = "com.example.fileprovider"
                                                             val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, file)
                                                             val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                                setDataAndType(uri, "image/*")
+                                                                val mimeType = if (isPhoto) "image/*" else if (isVideo) "video/*" else "application/pdf"
+                                                                setDataAndType(uri, mimeType)
                                                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                                             }
-                                                            context.startActivity(Intent.createChooser(intent, "Open Photo"))
+                                                            context.startActivity(Intent.createChooser(intent, "Open File"))
                                                         } catch (e: Exception) {
                                                             Toast.makeText(context, "Open failed: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                                                         }
@@ -757,14 +765,78 @@ fun ContactsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 )
                                         ) {
                                             Column {
-                                                AsyncImage(
-                                                    model = file,
-                                                    contentDescription = displayName,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .height(180.dp)
-                                                )
+                                                if (isPhoto) {
+                                                    AsyncImage(
+                                                        model = file,
+                                                        contentDescription = displayName,
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(180.dp)
+                                                    )
+                                                } else if (isVideo) {
+                                                    val thumbnailBitmap = rememberVideoThumbnail(file.absolutePath)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(180.dp)
+                                                            .background(Color.Black),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        if (thumbnailBitmap != null) {
+                                                            Image(
+                                                                bitmap = thumbnailBitmap,
+                                                                contentDescription = "Video Thumbnail Preview",
+                                                                contentScale = ContentScale.Crop,
+                                                                modifier = Modifier.fillMaxSize()
+                                                            )
+                                                        }
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(48.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color.Black.copy(alpha = 0.5f)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.PlayArrow,
+                                                                contentDescription = "Play",
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(32.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                } else if (isPdf) {
+                                                    val pdfBitmap = rememberPdfFirstPagePreview(file.absolutePath)
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(180.dp)
+                                                            .background(Color(0xFF1C1B1F)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        if (pdfBitmap != null) {
+                                                            Image(
+                                                                bitmap = pdfBitmap,
+                                                                contentDescription = "PDF Preview",
+                                                                contentScale = ContentScale.Crop,
+                                                                modifier = Modifier.fillMaxSize()
+                                                            )
+                                                        } else {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.InsertDriveFile,
+                                                                    contentDescription = "PDF",
+                                                                    tint = Color(0xFFE57373),
+                                                                    modifier = Modifier.size(48.dp)
+                                                                )
+                                                                Spacer(modifier = Modifier.height(4.dp))
+                                                                Text("PDF Document", color = Color.LightGray, fontSize = 11.sp)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()

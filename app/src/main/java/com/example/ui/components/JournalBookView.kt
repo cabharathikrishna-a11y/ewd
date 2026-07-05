@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import com.example.util.rememberVideoThumbnail
+import com.example.util.rememberPdfFirstPagePreview
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -66,6 +68,14 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
+import com.example.util.MapDownloadManager
+import org.mapsforge.map.android.graphics.AndroidGraphicFactory
+import org.mapsforge.map.android.util.AndroidUtil
+import org.mapsforge.map.datastore.MapDataStore
+import org.mapsforge.map.layer.cache.TileCache
+import org.mapsforge.map.layer.renderer.TileRendererLayer
+import org.mapsforge.map.rendertheme.InternalRenderTheme
+import org.mapsforge.core.model.LatLong
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1858,6 +1868,7 @@ private fun JournalMediaItem(
             ) {
                 Box {
                     if (!requestedVideoPlay || isEditing) {
+                        val thumbnailBitmap = rememberVideoThumbnail(path)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1865,6 +1876,14 @@ private fun JournalMediaItem(
                                 .background(Color.Black),
                             contentAlignment = Alignment.Center
                         ) {
+                            if (thumbnailBitmap != null) {
+                                Image(
+                                    bitmap = thumbnailBitmap,
+                                    contentDescription = "Video Thumbnail Preview",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                             Box(
                                 modifier = Modifier
                                     .size(60.dp)
@@ -2028,6 +2047,9 @@ private fun JournalMediaItem(
         }
 
         attach.startsWith("file:") -> {
+            val isPdf = remember(displayName) { displayName.lowercase().endsWith(".pdf") }
+            val pdfBitmap = if (isPdf) rememberPdfFirstPagePreview(path) else null
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2053,29 +2075,52 @@ private fun JournalMediaItem(
                     ),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1D2C42))
             ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.FileOpen, contentDescription = null, tint = WaterBlue, modifier = Modifier.size(24.dp))
-                        Column {
-                            Text(displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("${file.length() / 1024} KB • Hold for options", color = Color.LightGray, fontSize = 9.sp)
+                Column {
+                    if (isPdf && pdfBitmap != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(150.dp)
+                                .background(Color.White),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                bitmap = pdfBitmap,
+                                contentDescription = "PDF Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
                         }
                     }
-
-                    if (isEditing) {
-                        IconButton(
-                            onClick = onDelete,
-                            modifier = Modifier.size(24.dp)
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
+                            Icon(
+                                imageVector = if (isPdf) Icons.Default.InsertDriveFile else Icons.Default.FileOpen,
+                                contentDescription = null,
+                                tint = WaterBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("${file.length() / 1024} KB • Hold for options", color = Color.LightGray, fontSize = 9.sp)
+                            }
+                        }
+
+                        if (isEditing) {
+                            IconButton(
+                                onClick = onDelete,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = Color.Red)
+                            }
                         }
                     }
                 }
@@ -2138,6 +2183,167 @@ private fun saveFileToDownloads(context: android.content.Context, sourceFile: ja
     }
 }
 
+// Extract all entries with location coordinates
+data class EntryMarker(
+    val entry: JournalEntry,
+    val title: String,
+    val cityName: String,
+    val lat: Double,
+    val lng: Double
+)
+
+data class MarkerCluster(
+    var centerLat: Double,
+    var centerLng: Double,
+    val markers: MutableList<EntryMarker>
+)
+
+fun clusterMarkers(markers: List<EntryMarker>, zoomLevel: Byte): List<MarkerCluster> {
+    val clusters = mutableListOf<MarkerCluster>()
+    // At very high zooms, don't cluster unless they are virtually on top of each other
+    val radius = if (zoomLevel >= 14) {
+        0.0005
+    } else {
+        // Adjust cluster radius dynamically by zoom level
+        84.375 / (1 shl zoomLevel.toInt())
+    }
+
+    for (marker in markers) {
+        val targetCluster = clusters.find { cluster ->
+            val dLat = Math.abs(cluster.centerLat - marker.lat)
+            val dLng = Math.abs(cluster.centerLng - marker.lng)
+            dLat < radius && dLng < radius
+        }
+
+        if (targetCluster != null) {
+            targetCluster.markers.add(marker)
+            targetCluster.centerLat = targetCluster.markers.map { it.lat }.average()
+            targetCluster.centerLng = targetCluster.markers.map { it.lng }.average()
+        } else {
+            clusters.add(
+                MarkerCluster(
+                    centerLat = marker.lat,
+                    centerLng = marker.lng,
+                    markers = mutableListOf(marker)
+                )
+            )
+        }
+    }
+    return clusters
+}
+
+fun createClusterBitmap(context: android.content.Context, count: Int): org.mapsforge.core.graphics.Bitmap {
+    val density = context.resources.displayMetrics.density
+    val size = (36 * density).toInt()
+    val androidBitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(androidBitmap)
+
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.parseColor("#00D2FF") // WaterBlue color
+        style = android.graphics.Paint.Style.FILL
+    }
+    // Draw glowing outer circle
+    paint.alpha = 80
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, paint)
+
+    // Draw inner circle
+    paint.alpha = 255
+    paint.color = android.graphics.Color.parseColor("#141416") // Dark slate background
+    canvas.drawCircle(size / 2f, size / 2f, size / 2.8f, paint)
+
+    // Draw WaterBlue border on the inner circle
+    paint.color = android.graphics.Color.parseColor("#00D2FF")
+    paint.style = android.graphics.Paint.Style.STROKE
+    paint.strokeWidth = 2 * density
+    canvas.drawCircle(size / 2f, size / 2f, size / 2.8f, paint)
+
+    // Draw text count
+    paint.color = android.graphics.Color.WHITE
+    paint.style = android.graphics.Paint.Style.FILL
+    paint.textSize = 12 * density
+    paint.textAlign = android.graphics.Paint.Align.CENTER
+    paint.isFakeBoldText = true
+
+    val textHeight = paint.descent() - paint.ascent()
+    val textOffset = textHeight / 2 - paint.descent()
+    canvas.drawText(count.toString(), size / 2f, size / 2f + textOffset, paint)
+
+    val drawable = android.graphics.drawable.BitmapDrawable(context.resources, androidBitmap)
+    return org.mapsforge.map.android.graphics.AndroidGraphicFactory.convertToBitmap(drawable)
+}
+
+fun createSinglePinBitmap(context: android.content.Context): org.mapsforge.core.graphics.Bitmap {
+    val density = context.resources.displayMetrics.density
+    val size = (28 * density).toInt()
+    val androidBitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(androidBitmap)
+
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.parseColor("#00D2FF") // WaterBlue color
+        style = android.graphics.Paint.Style.FILL
+    }
+    // Draw soft outer halo
+    paint.alpha = 60
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, paint)
+
+    // Draw solid core
+    paint.alpha = 255
+    paint.color = android.graphics.Color.parseColor("#00D2FF")
+    canvas.drawCircle(size / 2f, size / 2f, size / 4f, paint)
+
+    // Draw white highlight border
+    paint.color = android.graphics.Color.WHITE
+    paint.style = android.graphics.Paint.Style.STROKE
+    paint.strokeWidth = 1.5f * density
+    canvas.drawCircle(size / 2f, size / 2f, size / 4f, paint)
+
+    val drawable = android.graphics.drawable.BitmapDrawable(context.resources, androidBitmap)
+    return org.mapsforge.map.android.graphics.AndroidGraphicFactory.convertToBitmap(drawable)
+}
+
+fun updateMforgeMarkers(
+    mapView: org.mapsforge.map.android.view.MapView,
+    context: android.content.Context,
+    markersList: List<EntryMarker>,
+    onClusterClick: (List<JournalEntry>, String) -> Unit
+) {
+    val zoomLevel = mapView.model.mapViewPosition.zoomLevel
+    val clusters = clusterMarkers(markersList, zoomLevel)
+
+    val layers = mapView.layerManager.layers
+    val toRemove = layers.filterIsInstance<org.mapsforge.map.layer.overlay.Marker>()
+    layers.removeAll(toRemove)
+
+    clusters.forEach { cluster ->
+        val bitmap = if (cluster.markers.size > 1) {
+            createClusterBitmap(context, cluster.markers.size)
+        } else {
+            createSinglePinBitmap(context)
+        }
+
+        val latLong = org.mapsforge.core.model.LatLong(cluster.centerLat, cluster.centerLng)
+        val m = object : org.mapsforge.map.layer.overlay.Marker(latLong, bitmap, 0, -bitmap.getHeight() / 2) {
+            override fun onTap(
+                tapLatLong: org.mapsforge.core.model.LatLong?,
+                viewPosition: org.mapsforge.core.model.Point?,
+                tapPoint: org.mapsforge.core.model.Point?
+            ): Boolean {
+                if (contains(viewPosition, tapPoint)) {
+                    val entries = cluster.markers.map { it.entry }
+                    val name = cluster.markers.firstOrNull()?.cityName ?: "Cluster"
+                    onClusterClick(entries, name)
+                    return true
+                }
+                return false
+            }
+        }
+        layers.add(m)
+    }
+    mapView.layerManager.redrawLayers()
+}
+
 @Composable
 fun JournalMapView(
     viewModel: AppViewModel,
@@ -2146,18 +2352,24 @@ fun JournalMapView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var mapType by remember { mutableStateOf("Dark Canvas") }
-    var searchQuery by remember { mutableStateOf("") }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var mforgeViewRef by remember { mutableStateOf<org.mapsforge.map.android.view.MapView?>(null) }
 
-    // Extract all entries with location coordinates
-    data class EntryMarker(
-        val entry: JournalEntry,
-        val title: String,
-        val cityName: String,
-        val lat: Double,
-        val lng: Double
-    )
+    val isDownloaded = remember { mutableStateOf(MapDownloadManager.isMapFileDownloaded(context, "southern")) }
+    val isDownloading by MapDownloadManager.isDownloading.collectAsState()
+    val downloadProgress by MapDownloadManager.downloadProgress.collectAsState()
+    val downloadError by MapDownloadManager.downloadError.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+
+    var selectedLocationEntries by remember { mutableStateOf<List<JournalEntry>>(emptyList()) }
+    var showLocationEntriesDialog by remember { mutableStateOf(false) }
+    var selectedLocationName by remember { mutableStateOf("") }
+    var showDownloadConfirmDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isDownloading) {
+        if (!isDownloading) {
+            isDownloaded.value = MapDownloadManager.isMapFileDownloaded(context, "southern")
+        }
+    }
 
     val markers = remember(entries) {
         entries.mapNotNull { entry ->
@@ -2178,347 +2390,405 @@ fun JournalMapView(
         }
     }
 
-    val htmlContent = remember(markers, mapType) {
-        val markersJs = StringBuilder()
-        markers.forEach { marker ->
-            val escapedTitle = marker.title.replace("'", "\\'")
-            val escapedCity = marker.cityName.replace("'", "\\'")
-            val snippet = if (marker.entry.text.length > 80) marker.entry.text.take(80) + "..." else marker.entry.text
-            val escapedSnippet = snippet.replace("'", "\\'").replace("\n", " ").replace("\r", " ")
-            val date = marker.entry.dateString
-            markersJs.append("addMarker(${marker.entry.id}, '$escapedTitle', '$escapedCity', '$escapedSnippet', '$date', ${marker.lat}, ${marker.lng});\n")
-        }
-
-        val tileLayerUrl = when (mapType) {
-            "Google Roadmap" -> "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-            "Google Satellite" -> "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-            else -> "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        }
-
-        val attribution = when (mapType) {
-            "Google Roadmap", "Google Satellite" -> "&copy; Google Maps"
-            else -> "&copy; OpenStreetMap &copy; CartoDB"
-        }
-
-        """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style>
-                html, body, #map { height: 100%; margin: 0; padding: 0; background: #070709; }
-                .leaflet-popup-content-wrapper {
-                    background: #121214 !important;
-                    color: #FFFFFF !important;
-                    border-radius: 12px;
-                    font-family: sans-serif;
-                    border: 1px solid #1a8a9d;
-                    padding: 4px;
-                }
-                .leaflet-popup-tip {
-                    background: #121214 !important;
-                }
-                .popup-title {
-                    font-weight: bold;
-                    color: #00D2FF;
-                    font-size: 14px;
-                    margin-bottom: 2px;
-                }
-                .popup-city {
-                    font-size: 10px;
-                    color: #888888;
-                    margin-bottom: 6px;
-                }
-                .popup-snippet {
-                    font-size: 11px;
-                    color: #CCCCCC;
-                    margin-bottom: 10px;
-                    line-height: 1.3;
-                }
-                .popup-btn {
-                    background: #00D2FF;
-                    color: #000000;
-                    border: none;
-                    padding: 6px 12px;
-                    border-radius: 6px;
-                    font-size: 11px;
-                    font-weight: bold;
-                    cursor: pointer;
-                    width: 100%;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                }
-            </style>
-        </head>
-        <body>
-            <div id="map"></div>
-            <script>
-                var map = L.map('map', { zoomControl: false }).setView([20.0, 0.0], 2);
-                L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-                L.tileLayer('$tileLayerUrl', {
-                    attribution: '$attribution',
-                    maxZoom: 20
-                }).addTo(map);
-
-                var markersGroup = L.featureGroup().addTo(map);
-
-                function addMarker(id, title, city, snippet, date, lat, lng) {
-                    var popupContent = `
-                        <div class="popup-title">${"$"}{title}</div>
-                        <div class="popup-city">${"$"}{city} • ${"$"}{date}</div>
-                        <div class="popup-snippet">${"$"}{snippet}</div>
-                        <button class="popup-btn" onclick="Android.openJournal(${"$"}{id})">VIEW JOURNAL</button>
-                    `;
-                    var marker = L.marker([lat, lng]).addTo(markersGroup);
-                    marker.bindPopup(popupContent);
-                }
-
-                $markersJs
-
-                if (markersGroup.getLayers().length > 0) {
-                    map.fitBounds(markersGroup.getBounds().pad(0.2));
-                }
-
-                function focusMarker(lat, lng) {
-                    map.setView([lat, lng], 13);
-                    markersGroup.eachLayer(function(marker) {
-                        if (Math.abs(marker.getLatLng().lat - lat) < 0.0001 && Math.abs(marker.getLatLng().lng - lng) < 0.0001) {
-                            marker.openPopup();
-                        }
-                    });
-                }
-
-                function centerAt(lat, lng) {
-                    map.setView([lat, lng], 12);
-                }
-            </script>
-        </body>
-        </html>
-        """.trimIndent()
-    }
-
-    LaunchedEffect(htmlContent) {
-        webViewRef?.loadDataWithBaseURL("https://appassets.androidplatform.net", htmlContent, "text/html", "UTF-8", null)
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF070709))
-    ) {
-        // Map Controls Header
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
-            shape = RoundedCornerShape(12.dp)
+    if (!isDownloaded.value) {
+        // Full screen download map box
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color(0xFF070709))
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = "JOURNAL LOCATIONS MAP",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Track your life events visually on an interactive Google Map canvas.",
-                    color = Color.Gray,
-                    fontSize = 10.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                // Search Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f))
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp)
                 ) {
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search city, country or coordinates...", color = Color.Gray, fontSize = 11.sp) },
-                        colors = TextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.LightGray,
-                            focusedContainerColor = Color(0xFF222225),
-                            unfocusedContainerColor = Color(0xFF1C1C1E),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        singleLine = true,
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .testTag("map_search_input")
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Download Map",
+                        tint = WaterBlue,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Southern India Map Download Required",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "To view your journal locations offline, please download the Southern India vector map file (511 MB). This file will be stored locally on your device.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp)
                     )
 
-                    Button(
-                        onClick = {
-                            if (searchQuery.isNotEmpty()) {
-                                performGeocoding(context, searchQuery) { lat, lng, _ ->
-                                    webViewRef?.evaluateJavascript("centerAt($lat, $lng)", null)
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(44.dp).testTag("map_search_btn")
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = "Search map", modifier = Modifier.size(16.dp))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Map Style Switcher Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text("Style:", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    listOf("Dark Canvas", "Google Roadmap", "Google Satellite").forEach { type ->
-                        val isSelected = mapType == type
-                        val bg = if (isSelected) WaterBlue else Color(0xFF222225)
-                        val textCol = if (isSelected) Color.Black else Color.White
-                        Box(
+                    if (isDownloading) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress ?: 0f },
+                            color = WaterBlue,
+                            trackColor = Color.DarkGray,
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(bg)
-                                .clickable { mapType = type }
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
-                                .testTag("map_style_${type.replace(" ", "_").lowercase()}")
-                        ) {
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                        )
+                        val pct = ((downloadProgress ?: 0f) * 100).toInt()
+                        Text(
+                            text = "Downloading offline map: $pct%",
+                            color = WaterBlue,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        if (downloadError != null) {
                             Text(
-                                text = type.uppercase(),
-                                color = textCol,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
+                                text = "Download Failed: $downloadError",
+                                color = Color.Red,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                showDownloadConfirmDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Text("Download Southern India (511 MB)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+
+                        if (showDownloadConfirmDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showDownloadConfirmDialog = false },
+                                title = { Text("Download Offline Map Data", color = Color.White) },
+                                text = {
+                                    Text(
+                                        "This will download 511 MB of Southern India vector map data to your device for offline location viewing. We recommend using a Wi-Fi connection. Continue?",
+                                        color = Color.LightGray
+                                    )
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            showDownloadConfirmDialog = false
+                                            coroutineScope.launch {
+                                                MapDownloadManager.downloadMap(context)
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
+                                    ) {
+                                        Text("Download (511 MB)")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(
+                                        onClick = { showDownloadConfirmDialog = false },
+                                        colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
+                                    ) {
+                                        Text("Cancel")
+                                    }
+                                },
+                                containerColor = Color(0xFF141416)
                             )
                         }
                     }
                 }
             }
         }
-
-        // WebView Map Container
-        Box(
-            modifier = Modifier
-                .weight(1.3f)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .border(androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f)), RoundedCornerShape(12.dp))
+    } else {
+        // Render Map
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color(0xFF070709))
         ) {
-            AndroidView(
-                factory = { ctx ->
-                    WebView(ctx).apply {
-                        webViewClient = WebViewClient()
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.cacheMode = WebSettings.LOAD_DEFAULT
-                        addJavascriptInterface(object {
-                            @JavascriptInterface
-                            fun openJournal(id: Int) {
-                                val found = entries.find { it.id == id }
-                                if (found != null) {
-                                    onEntryClick(found)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .border(androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f)), RoundedCornerShape(12.dp))
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        try {
+                            org.mapsforge.map.android.graphics.AndroidGraphicFactory.createInstance(ctx.applicationContext as android.app.Application)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        org.mapsforge.map.android.view.MapView(ctx).apply {
+                            isClickable = true
+                            getMapScaleBar().setVisible(true)
+                            getMapZoomControls().setZoomLevelMin(5.toByte())
+                            getMapZoomControls().setZoomLevelMax(20.toByte())
+
+                            val tileCache = org.mapsforge.map.android.util.AndroidUtil.createTileCache(
+                                ctx,
+                                "mapcache",
+                                model.displayModel.tileSize,
+                                1f,
+                                model.frameBufferModel.overdrawFactor
+                            )
+
+                            val mapDataStore = org.mapsforge.map.datastore.MultiMapDataStore(org.mapsforge.map.datastore.MultiMapDataStore.DataPolicy.RETURN_FIRST)
+                            MapDownloadManager.zones.forEach { zone ->
+                                if (MapDownloadManager.isMapFileDownloaded(ctx, zone.id)) {
+                                    try {
+                                        val f = MapDownloadManager.getMapFile(ctx, zone.id)
+                                        val store = org.mapsforge.map.reader.MapFile(f)
+                                        mapDataStore.addMapDataStore(store, false, false)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
                                 }
                             }
-                        }, "Android")
-                        webViewRef = this
-                        loadDataWithBaseURL("https://appassets.androidplatform.net", htmlContent, "text/html", "UTF-8", null)
-                    }
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-        }
 
-        // Horizontal List of Documented Locations for Quick Centering/Panning
-        if (markers.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = "DOCUMENTED PLACES (${markers.size})",
-                color = Color.Gray,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
-            )
+                            val tileRendererLayer = org.mapsforge.map.layer.renderer.TileRendererLayer(
+                                tileCache,
+                                mapDataStore,
+                                model.mapViewPosition,
+                                org.mapsforge.map.android.graphics.AndroidGraphicFactory.INSTANCE
+                            )
+                            tileRendererLayer.setXmlRenderTheme(org.mapsforge.map.rendertheme.InternalRenderTheme.DEFAULT)
 
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 4.dp)
-            ) {
-                items(markers) { marker ->
-                    Card(
-                        modifier = Modifier
-                            .width(160.dp)
-                            .clickable {
-                                webViewRef?.evaluateJavascript("focusMarker(${marker.lat}, ${marker.lng})", null)
+                            layerManager.layers.add(tileRendererLayer)
+
+                            // Add initial markers with clustering
+                            updateMforgeMarkers(this, ctx, markers) { entries, name ->
+                                selectedLocationEntries = entries
+                                selectedLocationName = name
+                                showLocationEntriesDialog = true
                             }
-                            .testTag("map_marker_card_${marker.entry.id}"),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.LocationOn,
-                                    contentDescription = null,
-                                    tint = WaterBlue,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+
+                            // Listen for zoom level changes to re-cluster
+                            val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                            val positionObserver = object : org.mapsforge.map.model.common.Observer {
+                                private var lastZoom = -1
+                                override fun onChange() {
+                                    val currentZoom = model.mapViewPosition.zoomLevel.toInt()
+                                    if (currentZoom != lastZoom) {
+                                        lastZoom = currentZoom
+                                        handler.post {
+                                            updateMforgeMarkers(this@apply, ctx, markers) { entries, name ->
+                                                selectedLocationEntries = entries
+                                                selectedLocationName = name
+                                                showLocationEntriesDialog = true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            model.mapViewPosition.addObserver(positionObserver)
+
+                            // Auto-remove observer on detach
+                            addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+                                override fun onViewAttachedToWindow(v: android.view.View) {}
+                                override fun onViewDetachedFromWindow(v: android.view.View) {
+                                    try {
+                                        model.mapViewPosition.removeObserver(positionObserver)
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                            })
+
+                            if (markers.isNotEmpty()) {
+                                val first = markers.first()
+                                setCenter(org.mapsforge.core.model.LatLong(first.lat, first.lng))
+                                setZoomLevel(8.toByte())
+                            } else {
+                                // Default center on Bangalore (Southern India)
+                                setCenter(org.mapsforge.core.model.LatLong(12.9716, 77.5946))
+                                setZoomLevel(7.toByte())
+                            }
+                            mforgeViewRef = this
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                DisposableEffect(Unit) {
+                    onDispose {
+                        try {
+                            mforgeViewRef?.destroyAll()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+
+            // Horizontal List of Documented Locations for Quick Centering/Panning
+            if (markers.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "DOCUMENTED PLACES (${markers.size})",
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+                )
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp)
+                ) {
+                    items(markers) { marker ->
+                        Card(
+                            modifier = Modifier
+                                .width(160.dp)
+                                .clickable {
+                                    mforgeViewRef?.setCenter(org.mapsforge.core.model.LatLong(marker.lat, marker.lng))
+                                    mforgeViewRef?.setZoomLevel(14.toByte())
+                                }
+                                .testTag("map_marker_card_${marker.entry.id}"),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF141416)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocationOn,
+                                        contentDescription = null,
+                                        tint = WaterBlue,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = marker.cityName,
+                                        color = WaterBlue,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = marker.cityName,
-                                    color = WaterBlue,
+                                    text = marker.title,
+                                    color = Color.White,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = marker.entry.dateString,
+                                    color = Color.Gray,
+                                    fontSize = 9.sp,
+                                    maxLines = 1
+                                )
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = marker.title,
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = marker.entry.dateString,
-                                color = Color.Gray,
-                                fontSize = 9.sp,
-                                maxLines = 1
-                            )
                         }
                     }
                 }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .weight(0.3f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No journal entries have locations tagged yet.\nWrite a journal entry and click the GPS pin icon to add a location!",
-                    color = Color.Gray,
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center
-                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No journal entries have locations tagged yet.\nWrite a journal entry and click the GPS pin icon to add a location!",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
+    }
+
+    if (showLocationEntriesDialog && selectedLocationEntries.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showLocationEntriesDialog = false },
+            title = {
+                Column {
+                    Text(
+                        text = "Journal Entries",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    if (selectedLocationName.isNotEmpty()) {
+                        Text(
+                            text = selectedLocationName,
+                            color = WaterBlue,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            text = {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                ) {
+                    items(selectedLocationEntries) { entry ->
+                        Card(
+                            onClick = {
+                                showLocationEntriesDialog = false
+                                onEntryClick(entry)
+                            },
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E22)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = entry.title.ifEmpty { "Untitled" },
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = entry.dateString,
+                                    color = Color.Gray,
+                                    fontSize = 10.sp
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = entry.text,
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLocationEntriesDialog = false }) {
+                    Text("CLOSE", color = WaterBlue)
+                }
+            },
+            containerColor = Color(0xFF141416)
+        )
     }
 }
 

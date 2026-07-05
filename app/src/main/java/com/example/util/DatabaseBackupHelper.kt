@@ -11,8 +11,37 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 
+data class BackupOptions(
+    val exportTasks: Boolean = true,
+    val exportHabits: Boolean = true,
+    val exportJournal: Boolean = true,
+    val exportFinances: Boolean = true,
+    val exportContacts: Boolean = true,
+    val exportFiles: Boolean = true,
+    val exportSettings: Boolean = true,
+    val exportHealth: Boolean = true,
+    val exportNotes: Boolean = true,
+    val exportFocus: Boolean = true
+)
+
 object DatabaseBackupHelper {
     private const val TAG = "DatabaseBackupHelper"
+
+    fun getBackupOptions(context: Context): BackupOptions {
+        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        return BackupOptions(
+            exportTasks = prefs.getBoolean("backup_option_tasks", true),
+            exportHabits = prefs.getBoolean("backup_option_habits", true),
+            exportJournal = prefs.getBoolean("backup_option_journal", true),
+            exportFinances = prefs.getBoolean("backup_option_finances", true),
+            exportContacts = prefs.getBoolean("backup_option_contacts", true),
+            exportFiles = prefs.getBoolean("backup_option_files", true),
+            exportSettings = prefs.getBoolean("backup_option_settings", true),
+            exportHealth = prefs.getBoolean("backup_option_health", true),
+            exportNotes = prefs.getBoolean("backup_option_notes", true),
+            exportFocus = prefs.getBoolean("backup_option_focus", true)
+        )
+    }
 
     suspend fun exportData(context: Context, database: AppDatabase, uri: Uri): Boolean {
         return try {
@@ -27,27 +56,31 @@ object DatabaseBackupHelper {
 
     suspend fun exportDataToStream(context: Context, database: AppDatabase, outputStream: java.io.OutputStream): Boolean {
         return try {
+            val options = getBackupOptions(context)
             val root = JSONObject()
             root.put("version", 5) // current schema version
             root.put("files_dir_path_placeholder", com.example.util.StorageHelper.getAppFilesDir(context).absolutePath)
 
             // 1. SharedPreferences backup
             val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-            val settingsJson = JSONObject()
-            val allPrefs = prefs.all
-            allPrefs.forEach { (key, value) ->
-                when (value) {
-                    is Boolean -> settingsJson.put(key, value)
-                    is Int -> settingsJson.put(key, value)
-                    is Long -> settingsJson.put(key, value)
-                    is Float -> settingsJson.put(key, value.toDouble())
-                    is String -> settingsJson.put(key, value)
+            if (options.exportSettings) {
+                val settingsJson = JSONObject()
+                val allPrefs = prefs.all
+                allPrefs.forEach { (key, value) ->
+                    if (key.startsWith("backup_option_")) return@forEach
+                    when (value) {
+                        is Boolean -> settingsJson.put(key, value)
+                        is Int -> settingsJson.put(key, value)
+                        is Long -> settingsJson.put(key, value)
+                        is Float -> settingsJson.put(key, value.toDouble())
+                        is String -> settingsJson.put(key, value)
+                    }
                 }
+                root.put("shared_preferences", settingsJson)
             }
-            root.put("shared_preferences", settingsJson)
 
             // 2. Tasks
-            val tasks = database.taskDao().getAllTasks().first()
+            val tasks = if (options.exportTasks) database.taskDao().getAllTasks().first() else emptyList()
             val tasksArray = JSONArray()
             tasks.forEach {
                 val obj = JSONObject()
@@ -69,7 +102,7 @@ object DatabaseBackupHelper {
             root.put("tasks", tasksArray)
 
             // 3. Habits
-            val habits = database.habitDao().getAllHabits().first()
+            val habits = if (options.exportHabits) database.habitDao().getAllHabits().first() else emptyList()
             val habitsArray = JSONArray()
             habits.forEach {
                 val obj = JSONObject()
@@ -82,7 +115,7 @@ object DatabaseBackupHelper {
             root.put("habits", habitsArray)
 
             // 4. Habit Completions
-            val completions = database.habitDao().getAllCompletions().first()
+            val completions = if (options.exportHabits) database.habitDao().getAllCompletions().first() else emptyList()
             val completionsArray = JSONArray()
             completions.forEach {
                 val obj = JSONObject()
@@ -93,7 +126,7 @@ object DatabaseBackupHelper {
             root.put("habit_completions", completionsArray)
 
             // 5. Journal Entries
-            val journal = database.journalDao().getAllJournalEntries().first()
+            val journal = if (options.exportJournal) database.journalDao().getAllJournalEntries().first() else emptyList()
             val journalArray = JSONArray()
             journal.forEach {
                 val obj = JSONObject()
@@ -107,7 +140,7 @@ object DatabaseBackupHelper {
             root.put("journal_entries", journalArray)
 
             // 6. Ledger Entries
-            val ledger = database.ledgerDao().getAllLedgerEntries().first()
+            val ledger = if (options.exportFinances) database.ledgerDao().getAllLedgerEntries().first() else emptyList()
             val ledgerArray = JSONArray()
             ledger.forEach {
                 val obj = JSONObject()
@@ -121,7 +154,7 @@ object DatabaseBackupHelper {
             root.put("ledger_entries", ledgerArray)
 
             // 7. Deadlines
-            val deadlines = database.deadlineDao().getAllDeadlines().first()
+            val deadlines = if (options.exportTasks) database.deadlineDao().getAllDeadlines().first() else emptyList()
             val deadlinesArray = JSONArray()
             deadlines.forEach {
                 val obj = JSONObject()
@@ -133,7 +166,7 @@ object DatabaseBackupHelper {
             root.put("deadlines", deadlinesArray)
 
             // 8. Financial Goals
-            val fg = database.financialGoalDao().getAllFinancialGoals().first()
+            val fg = if (options.exportFinances) database.financialGoalDao().getAllFinancialGoals().first() else emptyList()
             val fgArray = JSONArray()
             fg.forEach {
                 val obj = JSONObject()
@@ -146,7 +179,7 @@ object DatabaseBackupHelper {
             root.put("financial_goals", fgArray)
 
             // 9. Contacts
-            val contacts = database.contactDao().getAllContacts().first()
+            val contacts = if (options.exportContacts) database.contactDao().getAllContacts().first() else emptyList()
             val contactsArray = JSONArray()
             contacts.forEach {
                 val obj = JSONObject()
@@ -169,7 +202,7 @@ object DatabaseBackupHelper {
             root.put("contacts", contactsArray)
 
             // 10. App Files
-            val files = database.appFileDao().getAllFiles().first()
+            val files = if (options.exportFiles) database.appFileDao().getAllFiles().first() else emptyList()
             val filesArray = JSONArray()
             files.forEach {
                 val obj = JSONObject()
@@ -184,7 +217,7 @@ object DatabaseBackupHelper {
             root.put("app_files", filesArray)
 
             // 11. Custom Lists
-            val lists = database.customListDao().getAllLists().first()
+            val lists = if (options.exportTasks) database.customListDao().getAllLists().first() else emptyList()
             val listsArray = JSONArray()
             lists.forEach {
                 val obj = JSONObject()
@@ -197,7 +230,7 @@ object DatabaseBackupHelper {
             root.put("custom_lists", listsArray)
 
             // 12. Family Members
-            val members = database.familyMemberDao().getAllMembers().first()
+            val members = if (options.exportFinances) database.familyMemberDao().getAllMembers().first() else emptyList()
             val membersArray = JSONArray()
             members.forEach {
                 val obj = JSONObject()
@@ -208,7 +241,7 @@ object DatabaseBackupHelper {
             root.put("family_members", membersArray)
 
             // 13. Financial Accounts
-            val accounts = database.financialAccountDao().getAllAccounts().first()
+            val accounts = if (options.exportFinances) database.financialAccountDao().getAllAccounts().first() else emptyList()
             val accountsArray = JSONArray()
             accounts.forEach {
                 val obj = JSONObject()
@@ -222,7 +255,7 @@ object DatabaseBackupHelper {
             root.put("financial_accounts", accountsArray)
 
             // 14. Financial Logs
-            val logs = database.financialLogDao().getAllLogs().first()
+            val logs = if (options.exportFinances) database.financialLogDao().getAllLogs().first() else emptyList()
             val logsArray = JSONArray()
             logs.forEach {
                 val obj = JSONObject()
@@ -236,7 +269,7 @@ object DatabaseBackupHelper {
             root.put("financial_logs", logsArray)
 
             // 15. Finance Transactions
-            val transactions = database.financeTransactionDao().getAllTransactions().first()
+            val transactions = if (options.exportFinances) database.financeTransactionDao().getAllTransactions().first() else emptyList()
             val transactionsArray = JSONArray()
             transactions.forEach {
                 val obj = JSONObject()
@@ -255,7 +288,7 @@ object DatabaseBackupHelper {
             root.put("finance_transactions", transactionsArray)
 
             // 16. Finance Categories
-            val categories = database.financeCategoryDao().getAllCategories().first()
+            val categories = if (options.exportFinances) database.financeCategoryDao().getAllCategories().first() else emptyList()
             val categoriesArray = JSONArray()
             categories.forEach {
                 val obj = JSONObject()
@@ -265,6 +298,72 @@ object DatabaseBackupHelper {
                 categoriesArray.put(obj)
             }
             root.put("finance_categories", categoriesArray)
+
+            // 17. Health Records
+            val healthRecords = if (options.exportHealth) database.healthRecordDao().getAllHealthRecordsFlow().first() else emptyList()
+            val healthArray = JSONArray()
+            healthRecords.forEach {
+                val obj = JSONObject()
+                obj.put("dateString", it.dateString)
+                obj.put("steps", it.steps)
+                obj.put("stepGoal", it.stepGoal)
+                obj.put("sleepMinutes", it.sleepMinutes)
+                obj.put("sleepGoalMinutes", it.sleepGoalMinutes)
+                obj.put("waterMl", it.waterMl)
+                obj.put("waterGoalMl", it.waterGoalMl)
+                obj.put("caloriesBurned", it.caloriesBurned)
+                obj.put("calorieGoal", it.calorieGoal)
+                obj.put("activeMinutes", it.activeMinutes)
+                obj.put("activeMinutesGoal", it.activeMinutesGoal)
+                obj.put("heartRateAvg", it.heartRateAvg)
+                obj.put("heartRateMin", it.heartRateMin)
+                obj.put("heartRateMax", it.heartRateMax)
+                obj.put("breakfastFoods", it.breakfastFoods)
+                obj.put("lunchFoods", it.lunchFoods)
+                obj.put("dinnerFoods", it.dinnerFoods)
+                obj.put("snacksFoods", it.snacksFoods)
+                obj.put("timestamp", it.timestamp)
+                obj.put("isSynced", it.isSynced)
+                healthArray.put(obj)
+            }
+            root.put("health_records", healthArray)
+
+            // 18. Keep Notes
+            val keepNotes = if (options.exportNotes) database.keepNoteDao().getAllKeepNotesDirect() else emptyList()
+            val keepArray = JSONArray()
+            keepNotes.forEach {
+                val obj = JSONObject()
+                obj.put("id", it.id)
+                obj.put("title", it.title)
+                obj.put("content", it.content)
+                obj.put("timestamp", it.timestamp)
+                obj.put("isPinned", it.isPinned)
+                obj.put("colorHex", it.colorHex)
+                obj.put("isSynced", it.isSynced)
+                obj.put("websiteUrl", it.websiteUrl ?: "")
+                obj.put("customLogoUrl", it.customLogoUrl ?: "")
+                keepArray.put(obj)
+            }
+            root.put("keep_notes", keepArray)
+
+            // 19. Focus Session Records
+            val focusRecords = if (options.exportFocus) database.focusRecordDao().getAllRecords().first() else emptyList()
+            val focusArray = JSONArray()
+            focusRecords.forEach {
+                val obj = JSONObject()
+                obj.put("id", it.id)
+                obj.put("taskTitle", it.taskTitle)
+                obj.put("tag", it.tag)
+                obj.put("notes", it.notes)
+                obj.put("durationSeconds", it.durationSeconds)
+                obj.put("durationMinutes", it.durationMinutes)
+                obj.put("dateString", it.dateString)
+                obj.put("startTime", it.startTime)
+                obj.put("endTime", it.endTime)
+                obj.put("timestamp", it.timestamp)
+                focusArray.put(obj)
+            }
+            root.put("focus_records", focusArray)
 
             val driveLinksJson = JSONObject()
             try {
@@ -302,6 +401,9 @@ object DatabaseBackupHelper {
 
             var imageCount = 0
             var videoCount = 0
+            var pdfCount = 0
+            var wordCount = 0
+            var excelCount = 0
             var otherCount = 0
 
             filesList.forEach { file ->
@@ -311,8 +413,14 @@ object DatabaseBackupHelper {
                         imageCount++
                     } else if (nameLower.endsWith(".mp4") || nameLower.endsWith(".3gp") || nameLower.endsWith(".mkv") || nameLower.endsWith(".webm") || nameLower.endsWith(".avi")) {
                         videoCount++
+                    } else if (nameLower.endsWith(".pdf")) {
+                        pdfCount++
+                    } else if (nameLower.endsWith(".doc") || nameLower.endsWith(".docx")) {
+                        wordCount++
+                    } else if (nameLower.endsWith(".xls") || nameLower.endsWith(".xlsx")) {
+                        excelCount++
                     } else {
-                        if (file.name != "backup_summary.txt" && file.name != "backup_data.json") {
+                        if (file.name != "backup_summary.txt" && file.name != "backup_data.json" && !file.name.endsWith(".zip")) {
                             otherCount++
                         }
                     }
@@ -323,6 +431,8 @@ object DatabaseBackupHelper {
             val tasksCount = tasks.size
             val habitsCount = habits.size
             val ledgerCount = ledger.size
+            val healthRecordsCount = healthRecords.size
+            val keepNotesCount = keepNotes.size
 
             val serializedFocus = prefs.getString("focus_records_list", null) ?: ""
             val focusRecordsLines = if (serializedFocus.isBlank()) emptyList() else serializedFocus.split("\n")
@@ -342,11 +452,16 @@ object DatabaseBackupHelper {
                 --- BACKUP SUMMARY MANIFEST ---
                 Images Count: $imageCount (excluded from Drive zip, synced via Google Photos)
                 Videos Count: $videoCount (excluded from Drive zip, synced via Google Photos)
+                PDF Documents Count: $pdfCount
+                Word Documents Count: $wordCount
+                Excel Spreadsheets Count: $excelCount
                 Other Files Count: $otherCount
                 Journals Count: $journalsCount
                 Tasks Count: $tasksCount
                 Habits Count: $habitsCount
                 History (Ledger) Entries Count: $ledgerCount
+                Health & Fitness Records Count: $healthRecordsCount
+                Keep Notes Count: $keepNotesCount
                 Focused Session Record Count: $focusRecordsCount
                 Total Focused Session Duration (minutes): $totalFocusMins
                 -------------------------------
@@ -371,22 +486,24 @@ object DatabaseBackupHelper {
                 zipOut.closeEntry()
 
                 // 2. Write all physical files (journal photos, recordings, local files)
-                filesList.forEach { file ->
-                    if (file.isFile) {
-                        val nameLower = file.name.lowercase()
-                        val isGooglePhotosSyncable = nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || 
-                                                   nameLower.endsWith(".png") || nameLower.endsWith(".webp") || 
-                                                   nameLower.endsWith(".mp4") || nameLower.endsWith(".3gp") || 
-                                                   nameLower.endsWith(".mkv") || nameLower.endsWith(".webm") || 
-                                                   nameLower.endsWith(".avi")
-                        if (!isGooglePhotosSyncable) {
-                            val entryName = "media/${file.name}"
-                            val fileEntry = java.util.zip.ZipEntry(entryName)
-                            zipOut.putNextEntry(fileEntry)
-                            file.inputStream().use { input ->
-                                FileChunkHelper.copyStreamSecure(input, zipOut, bufferSize = 8192)
+                if (options.exportFiles || options.exportJournal) {
+                    filesList.forEach { file ->
+                        if (file.isFile) {
+                            val nameLower = file.name.lowercase()
+                            val isGooglePhotosSyncable = nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || 
+                                                       nameLower.endsWith(".png") || nameLower.endsWith(".webp") || 
+                                                       nameLower.endsWith(".mp4") || nameLower.endsWith(".3gp") || 
+                                                       nameLower.endsWith(".mkv") || nameLower.endsWith(".webm") || 
+                                                       nameLower.endsWith(".avi")
+                            if (!isGooglePhotosSyncable) {
+                                val entryName = "media/${file.name}"
+                                val fileEntry = java.util.zip.ZipEntry(entryName)
+                                zipOut.putNextEntry(fileEntry)
+                                file.inputStream().use { input ->
+                                    FileChunkHelper.copyStreamSecure(input, zipOut, bufferSize = 8192)
+                                }
+                                zipOut.closeEntry()
                             }
-                            zipOut.closeEntry()
                         }
                     }
                 }
@@ -494,29 +611,74 @@ object DatabaseBackupHelper {
 
             val root = JSONObject(finalContentStr)
 
+            val options = getBackupOptions(context)
+
             // Transact-clear existing databases & tables to prevent ID collisions, clones or leaks
             database.runInTransaction {
-                database.clearAllTables()
+                if (options.exportTasks) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM tasks")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM custom_lists")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM deadlines")
+                }
+                if (options.exportHabits) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM habit_completions")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM habits")
+                }
+                if (options.exportJournal) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM journal_entries")
+                }
+                if (options.exportFinances) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM ledger_entries")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM financial_goals")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM financial_logs")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM finance_transactions")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM financial_accounts")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM family_members")
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM finance_categories")
+                }
+                if (options.exportContacts) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM contacts")
+                }
+                if (options.exportFiles) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM app_files")
+                }
+                if (options.exportHealth) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM health_records")
+                }
+                if (options.exportNotes) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM keep_notes")
+                }
+                if (options.exportFocus) {
+                    database.openHelper.writableDatabase.execSQL("DELETE FROM focus_records")
+                }
             }
 
             // Restore SharedPreferences if present
-            val settingsJson = root.optJSONObject("shared_preferences")
-            if (settingsJson != null) {
-                val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
-                prefs.clear() // Remove local keys to overwrite with backup
-                val keys = settingsJson.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    val value = settingsJson.get(key)
-                    when (value) {
-                        is Boolean -> prefs.putBoolean(key, value)
-                        is Int -> prefs.putInt(key, value)
-                        is Long -> prefs.putLong(key, value)
-                        is Double -> prefs.putFloat(key, value.toFloat())
-                        is String -> prefs.putString(key, value)
+            if (options.exportSettings) {
+                val settingsJson = root.optJSONObject("shared_preferences")
+                if (settingsJson != null) {
+                    val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit()
+                    val oldPrefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).all
+                    oldPrefs.keys.forEach { key ->
+                        if (!key.startsWith("backup_option_")) {
+                            prefs.remove(key)
+                        }
                     }
+                    val keys = settingsJson.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        if (key.startsWith("backup_option_")) continue
+                        val value = settingsJson.get(key)
+                        when (value) {
+                            is Boolean -> prefs.putBoolean(key, value)
+                            is Int -> prefs.putInt(key, value)
+                            is Long -> prefs.putLong(key, value)
+                            is Double -> prefs.putFloat(key, value.toFloat())
+                            is String -> prefs.putString(key, value)
+                        }
+                    }
+                    prefs.apply()
                 }
-                prefs.apply()
             }
 
             // 1. Tasks
@@ -819,6 +981,84 @@ object DatabaseBackupHelper {
                                 Log.e(TAG, "Failed to download missing file $fileName from Drive link: $sharingUrl", e)
                             }
                         }
+                    }
+                }
+            }
+
+            // 18. Health Records
+            if (options.exportHealth) {
+                val healthArray = root.optJSONArray("health_records")
+                if (healthArray != null) {
+                    for (i in 0 until healthArray.length()) {
+                        val obj = healthArray.getJSONObject(i)
+                        val hr = HealthRecord(
+                            dateString = obj.optString("dateString", ""),
+                            steps = obj.optInt("steps", 0),
+                            stepGoal = obj.optInt("stepGoal", 10000),
+                            sleepMinutes = obj.optInt("sleepMinutes", 0),
+                            sleepGoalMinutes = obj.optInt("sleepGoalMinutes", 480),
+                            waterMl = obj.optInt("waterMl", 0),
+                            waterGoalMl = obj.optInt("waterGoalMl", 2000),
+                            caloriesBurned = obj.optInt("caloriesBurned", 0),
+                            calorieGoal = obj.optInt("calorieGoal", 2000),
+                            activeMinutes = obj.optInt("activeMinutes", 0),
+                            activeMinutesGoal = obj.optInt("activeMinutesGoal", 45),
+                            heartRateAvg = obj.optInt("heartRateAvg", 72),
+                            heartRateMin = obj.optInt("heartRateMin", 60),
+                            heartRateMax = obj.optInt("heartRateMax", 120),
+                            breakfastFoods = obj.optString("breakfastFoods", ""),
+                            lunchFoods = obj.optString("lunchFoods", ""),
+                            dinnerFoods = obj.optString("dinnerFoods", ""),
+                            snacksFoods = obj.optString("snacksFoods", ""),
+                            timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                            isSynced = obj.optBoolean("isSynced", false)
+                        )
+                        database.healthRecordDao().insertOrUpdate(hr)
+                    }
+                }
+            }
+
+            // 19. Keep Notes
+            if (options.exportNotes) {
+                val keepArray = root.optJSONArray("keep_notes")
+                if (keepArray != null) {
+                    for (i in 0 until keepArray.length()) {
+                        val obj = keepArray.getJSONObject(i)
+                        val kn = KeepNote(
+                            id = obj.optInt("id", 0),
+                            title = obj.optString("title", ""),
+                            content = obj.optString("content", ""),
+                            timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                            isPinned = obj.optBoolean("isPinned", false),
+                            colorHex = obj.optString("colorHex", "#202124"),
+                            isSynced = obj.optBoolean("isSynced", false),
+                            websiteUrl = obj.optString("websiteUrl", "").let { if (it.isEmpty()) null else it },
+                            customLogoUrl = obj.optString("customLogoUrl", "").let { if (it.isEmpty()) null else it }
+                        )
+                        database.keepNoteDao().insertKeepNote(kn)
+                    }
+                }
+            }
+
+            // 20. Focus Session Records
+            if (options.exportFocus) {
+                val focusArray = root.optJSONArray("focus_records")
+                if (focusArray != null) {
+                    for (i in 0 until focusArray.length()) {
+                        val obj = focusArray.getJSONObject(i)
+                        val fr = FocusRecordEntity(
+                            id = obj.optInt("id", 0),
+                            taskTitle = obj.optString("taskTitle", ""),
+                            tag = obj.optString("tag", ""),
+                            notes = obj.optString("notes", ""),
+                            durationSeconds = obj.optInt("durationSeconds", 0),
+                            durationMinutes = obj.optInt("durationMinutes", 0),
+                            dateString = obj.optString("dateString", ""),
+                            startTime = obj.optString("startTime", ""),
+                            endTime = obj.optString("endTime", ""),
+                            timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                        )
+                        database.focusRecordDao().insertRecord(fr)
                     }
                 }
             }

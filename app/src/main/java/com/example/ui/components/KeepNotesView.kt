@@ -1,5 +1,10 @@
 package com.example.ui.components
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.example.util.StorageHelper
+import com.example.util.MediaPreviewBox
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +54,21 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var inputContent by remember { mutableStateOf("") }
     var inputColorHex by remember { mutableStateOf("#202124") }
     var inputIsPinned by remember { mutableStateOf(false) }
+    var inputAttachment by remember { mutableStateOf("") }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val copiedFile = StorageHelper.copyFileToInternalSandbox(context, it)
+            if (copiedFile != null) {
+                inputAttachment = copiedFile.name
+                android.widget.Toast.makeText(context, "Attachment added: ${copiedFile.name}", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(context, "Failed to attach file", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // Keep standard dark mode backgrounds
     val keepColors = listOf(
@@ -237,7 +257,10 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 onClick = {
                                     noteToEdit = note
                                     inputTitle = note.title
-                                    inputContent = note.content
+                                    val match = Regex("""\[Attachment: ([^\]]+)\]""").find(note.content)
+                                    val att = match?.groupValues?.get(1)?.trim() ?: ""
+                                    inputAttachment = att
+                                    inputContent = note.content.replace(Regex("""\n?\[Attachment: [^\]]+\]"""), "").trim()
                                     inputColorHex = note.colorHex
                                     inputIsPinned = note.isPinned
                                     showAddDialog = true
@@ -268,7 +291,10 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 onClick = {
                                     noteToEdit = note
                                     inputTitle = note.title
-                                    inputContent = note.content
+                                    val match = Regex("""\[Attachment: ([^\]]+)\]""").find(note.content)
+                                    val att = match?.groupValues?.get(1)?.trim() ?: ""
+                                    inputAttachment = att
+                                    inputContent = note.content.replace(Regex("""\n?\[Attachment: [^\]]+\]"""), "").trim()
                                     inputColorHex = note.colorHex
                                     inputIsPinned = note.isPinned
                                     showAddDialog = true
@@ -292,6 +318,7 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 noteToEdit = null
                 inputTitle = ""
                 inputContent = ""
+                inputAttachment = ""
                 inputColorHex = "#202124"
                 inputIsPinned = false
                 showAddDialog = true
@@ -375,6 +402,72 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             )
                         }
 
+                        // File attachment trigger
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Attach File", color = Color.LightGray, fontSize = 14.sp)
+                            IconButton(
+                                onClick = { filePickerLauncher.launch("*/*") },
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(WaterBlue.copy(alpha = 0.15f))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Attach File",
+                                    tint = WaterBlue
+                                )
+                            }
+                        }
+
+                        // Attachment preview in dialog
+                        if (inputAttachment.isNotEmpty()) {
+                            val previewType = remember(inputAttachment) {
+                                val nameLower = inputAttachment.lowercase()
+                                if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp")) {
+                                    "image"
+                                } else if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mov") || nameLower.endsWith(".3gp") || nameLower.endsWith(".mkv")) {
+                                    "video"
+                                } else if (nameLower.endsWith(".mp3") || nameLower.endsWith(".m4a") || nameLower.endsWith(".wav") || nameLower.endsWith(".aac")) {
+                                    "audio"
+                                } else if (nameLower.endsWith(".pdf")) {
+                                    "pdf"
+                                } else if (nameLower.endsWith(".doc") || nameLower.endsWith(".docx")) {
+                                    "word"
+                                } else if (nameLower.endsWith(".xls") || nameLower.endsWith(".xlsx")) {
+                                    "excel"
+                                } else {
+                                    "others"
+                                }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                MediaPreviewBox(
+                                    pathOrName = inputAttachment,
+                                    type = previewType,
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(inputAttachment, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(previewType.uppercase(), color = Color.Gray, fontSize = 10.sp)
+                                }
+                                IconButton(onClick = { inputAttachment = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove", tint = Color.Red)
+                                }
+                            }
+                        }
+
                         // Color picker title
                         Text("Choose Card Color", color = Color.LightGray, fontSize = 14.sp)
 
@@ -409,10 +502,15 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         onClick = {
                             if (inputTitle.isNotBlank() || inputContent.isNotBlank()) {
                                 val currentEdit = noteToEdit
+                                val contentWithAttachment = if (inputAttachment.isNotEmpty()) {
+                                    "$inputContent\n[Attachment: $inputAttachment]"
+                                } else {
+                                    inputContent
+                                }
                                 if (currentEdit == null) {
                                     viewModel.insertKeepNote(
                                         title = inputTitle,
-                                        content = inputContent,
+                                        content = contentWithAttachment,
                                         colorHex = inputColorHex,
                                         isPinned = inputIsPinned
                                     )
@@ -420,7 +518,7 @@ fun KeepNotesView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     viewModel.updateKeepNote(
                                         currentEdit.copy(
                                             title = inputTitle,
-                                            content = inputContent,
+                                            content = contentWithAttachment,
                                             colorHex = inputColorHex,
                                             isPinned = inputIsPinned
                                         )
@@ -570,13 +668,51 @@ fun NoteCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                if (note.content.isNotEmpty()) {
+                val parsedAttachment = remember(note.content) {
+                    val match = Regex("""\[Attachment: ([^\]]+)\]""").find(note.content)
+                    match?.groupValues?.get(1)?.trim() ?: ""
+                }
+                val cleanContent = remember(note.content) {
+                    note.content.replace(Regex("""\n?\[Attachment: [^\]]+\]"""), "").trim()
+                }
+
+                if (cleanContent.isNotEmpty()) {
                     Text(
-                        text = note.content,
+                        text = cleanContent,
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp,
                         maxLines = 8,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (parsedAttachment.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val previewType = remember(parsedAttachment) {
+                        val nameLower = parsedAttachment.lowercase()
+                        if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp")) {
+                            "image"
+                        } else if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mov") || nameLower.endsWith(".3gp") || nameLower.endsWith(".mkv")) {
+                            "video"
+                        } else if (nameLower.endsWith(".mp3") || nameLower.endsWith(".m4a") || nameLower.endsWith(".wav") || nameLower.endsWith(".aac")) {
+                            "audio"
+                        } else if (nameLower.endsWith(".pdf")) {
+                            "pdf"
+                        } else if (nameLower.endsWith(".doc") || nameLower.endsWith(".docx")) {
+                            "word"
+                        } else if (nameLower.endsWith(".xls") || nameLower.endsWith(".xlsx")) {
+                            "excel"
+                        } else {
+                            "others"
+                        }
+                    }
+                    MediaPreviewBox(
+                        pathOrName = parsedAttachment,
+                        type = previewType,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(6.dp))
                     )
                 }
 

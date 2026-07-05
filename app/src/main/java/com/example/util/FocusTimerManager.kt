@@ -1898,7 +1898,7 @@ object FocusTimerManager {
 
             // End button on the left
             val endBtn = TextView(context).apply {
-                text = "▮"
+                text = "■"
                 setTextColor(0xFFFF5252.toInt())
                 textSize = textSizeVal - 2
                 gravity = Gravity.CENTER
@@ -1952,7 +1952,7 @@ object FocusTimerManager {
             // Pause button on the right
             val pauseBtn = TextView(context).apply {
                 val isRunning = isTimerRunning.value || isStopwatchActive.value
-                text = if (isRunning) "❙❙" else "❙"
+                text = if (isRunning) "❙❙" else "▶"
                 setTextColor(0xFF03A9F4.toInt())
                 textSize = textSizeVal - 2
                 gravity = Gravity.CENTER
@@ -2489,7 +2489,7 @@ object FocusTimerManager {
             }
             tvPauseBtn?.let { btn ->
                 val isRunning = isTimerRunning.value || isStopwatchActive.value
-                btn.text = if (isRunning) "❙❙" else "❙"
+                btn.text = if (isRunning) "❙❙" else "▶"
             }
         }
     }

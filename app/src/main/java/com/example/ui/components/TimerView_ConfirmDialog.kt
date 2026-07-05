@@ -304,85 +304,101 @@ fun TimerConfirmDialogController(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.Top
                     ) {
+                        // Hours Column
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Hours", color = Color.Gray, fontSize = 11.sp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = { if (editHoursInput > 0) viewModel.setEditHoursInput(editHoursInput - 1) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Decrease", tint = Color.White)
-                                }
-                                Text(
-                                    text = "$editHoursInput",
-                                    color = Color.White,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                )
-                                IconButton(
-                                    onClick = { viewModel.setEditHoursInput(editHoursInput + 1) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Increase", tint = Color.White)
-                                }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            IconButton(
+                                onClick = { viewModel.setEditHoursInput(editHoursInput + 1) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Increase", tint = Color.White)
+                            }
+                            Text(
+                                text = "$editHoursInput",
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            IconButton(
+                                onClick = { if (editHoursInput > 0) viewModel.setEditHoursInput(editHoursInput - 1) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Decrease", tint = Color.White)
                             }
                         }
 
-                        Text(":", color = Color.Gray, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(12.dp))
 
+                        // Colon 1
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Spacer(modifier = Modifier.height(50.dp))
+                            Text(":", color = Color.Gray, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Minutes Column
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Minutes", color = Color.Gray, fontSize = 11.sp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = { if (editMinutesInput > 0) viewModel.setEditMinutesInput(editMinutesInput - 1) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Decrease", tint = Color.White)
-                                }
-                                Text(
-                                    text = String.format("%02d", editMinutesInput),
-                                    color = Color.White,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                )
-                                IconButton(
-                                    onClick = { if (editMinutesInput < 59) viewModel.setEditMinutesInput(editMinutesInput + 1) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Increase", tint = Color.White)
-                                }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            IconButton(
+                                onClick = { if (editMinutesInput < 59) viewModel.setEditMinutesInput(editMinutesInput + 1) else viewModel.setEditMinutesInput(0) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Increase", tint = Color.White)
+                            }
+                            Text(
+                                text = String.format("%02d", editMinutesInput),
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            IconButton(
+                                onClick = { if (editMinutesInput > 0) viewModel.setEditMinutesInput(editMinutesInput - 1) else viewModel.setEditMinutesInput(59) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Decrease", tint = Color.White)
                             }
                         }
 
-                        Text(":", color = Color.Gray, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(12.dp))
 
+                        // Colon 2
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Spacer(modifier = Modifier.height(50.dp))
+                            Text(":", color = Color.Gray, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Seconds Column
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Seconds", color = Color.Gray, fontSize = 11.sp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = { if (editSecondsInput > 0) viewModel.setEditSecondsInput(editSecondsInput - 1) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Decrease", tint = Color.White)
-                                }
-                                Text(
-                                    text = String.format("%02d", editSecondsInput),
-                                    color = Color.White,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                )
-                                IconButton(
-                                    onClick = { if (editSecondsInput < 59) viewModel.setEditSecondsInput(editSecondsInput + 1) else viewModel.setEditSecondsInput(0) },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Increase", tint = Color.White)
-                                }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            IconButton(
+                                onClick = { if (editSecondsInput < 59) viewModel.setEditSecondsInput(editSecondsInput + 1) else viewModel.setEditSecondsInput(0) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Increase", tint = Color.White)
+                            }
+                            Text(
+                                text = String.format("%02d", editSecondsInput),
+                                color = Color.White,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            IconButton(
+                                onClick = { if (editSecondsInput > 0) viewModel.setEditSecondsInput(editSecondsInput - 1) else viewModel.setEditSecondsInput(59) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Decrease", tint = Color.White)
                             }
                         }
                     }

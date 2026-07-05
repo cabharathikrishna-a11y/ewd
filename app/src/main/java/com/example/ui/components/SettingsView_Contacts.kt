@@ -32,6 +32,16 @@ fun SettingsContactsPage(
 ) {
     val context = LocalContext.current
 
+    val googleAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.syncGoogleContacts(context) { intent ->
+                // Avoid looping
+            }
+        }
+    }
+
     val contactsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -211,6 +221,12 @@ fun SettingsContactsPage(
                     var contactsGroup by remember { mutableStateOf(prefs.getString("selected_contacts_group", "LifeOS Contacts Group")) }
                     var autoCloudBackup by remember { mutableStateOf(prefs.getBoolean("auto_cloud_contacts_backup", true)) }
 
+                    LaunchedEffect(Unit) {
+                        if (prefs.getString("selected_contacts_account", null) == null) {
+                            prefs.edit().putString("selected_contacts_account", defaultEmail).apply()
+                        }
+                    }
+
                     val googleSignInLauncher = rememberLauncherForActivityResult(
                         contract = ActivityResultContracts.StartActivityForResult()
                     ) { result ->
@@ -347,6 +363,49 @@ fun SettingsContactsPage(
                                 checkedThumbColor = WaterBlue,
                                 checkedTrackColor = WaterBlue.copy(alpha = 0.5f)
                             )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    val googleContactsSyncStatus by viewModel.googleContactsSyncStatus.collectAsState()
+
+                    Button(
+                        onClick = {
+                            viewModel.syncGoogleContacts(context) { intent ->
+                                googleAuthLauncher.launch(intent)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("sync_google_contacts_now_btn"),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        if (googleContactsSyncStatus == "Syncing...") {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color.Black,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Syncing with Google...", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Sync Google Contacts Now", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    if (googleContactsSyncStatus.isNotEmpty() && googleContactsSyncStatus != "Ready") {
+                        val isSuccess = googleContactsSyncStatus.contains("successful", ignoreCase = true)
+                        Text(
+                            text = "Sync Status: $googleContactsSyncStatus",
+                            color = if (isSuccess) Color(0xFF4CAF50) else Color(0xFFE57373),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.util.MediaPreviewBox
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.launch
@@ -43,6 +44,7 @@ data class ExplorerFile(
     val timestamp: Long,
     val sourceName: String,  // e.g. "Journal Entry", "Task: Homework", "Contact: Munee"
     val fileMime: String,
+    val path: String = "",
     val onClick: () -> Unit
 )
 
@@ -89,21 +91,26 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     if (attachment.isNotEmpty() && !attachment.startsWith("loc:")) {
                         var name = "Attachment"
                         var type = "others"
+                        var filePath = ""
                         if (attachment.startsWith("photo:")) {
                             val path = attachment.removePrefix("photo:")
                             name = path.substringAfterLast("/")
                             type = "image"
+                            filePath = path
                         } else if (attachment.startsWith("video:")) {
                             val path = attachment.removePrefix("video:")
                             name = path.substringAfterLast("/")
                             type = "video"
+                            filePath = path
                         } else if (attachment.startsWith("audio:")) {
                             val path = attachment.removePrefix("audio:")
                             name = path.substringAfterLast("/")
                             type = "audio"
+                            filePath = path
                         } else if (attachment.startsWith("file:")) {
                             val parts = attachment.removePrefix("file:").split("|path:")
                             name = parts.getOrNull(0) ?: "Document"
+                            filePath = parts.getOrNull(1) ?: ""
                             type = if (name.lowercase().endsWith(".png") || name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg") || name.lowercase().endsWith(".webp")) {
                                 "image"
                             } else if (name.lowercase().endsWith(".mp3") || name.lowercase().endsWith(".m4a") || name.lowercase().endsWith(".wav") || name.lowercase().endsWith(".gz") || name.lowercase().endsWith(".aac")) {
@@ -129,6 +136,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 timestamp = entry.timestamp,
                                 sourceName = "Journal (${entry.dateString})",
                                 fileMime = if (type == "image") "image/png" else if (type == "video") "video/mp4" else if (type == "audio") "audio/mpeg" else "application/pdf",
+                                path = filePath,
                                 onClick = {
                                     viewModel.selectJournal(entry.id)
                                 }
@@ -179,6 +187,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         timestamp = System.currentTimeMillis() - 1000L * 60 * 30, // approximate task created earlier
                         sourceName = "Task: ${task.title}",
                         fileMime = if (type == "image") "image/png" else if (type == "video") "video/mp4" else if (type == "audio") "audio/mpeg" else "application/pdf",
+                        path = java.io.File(com.example.util.StorageHelper.getAppFilesDir(context), name).absolutePath,
                         onClick = {
                             viewModel.selectTask(task.id)
                         }
@@ -204,6 +213,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         timestamp = System.currentTimeMillis() - 1000L * 60 * 15,
                         sourceName = "Contact: ${contact.firstName} ${contact.lastName}",
                         fileMime = "image/png",
+                        path = contact.photoUri,
                         onClick = {
                             viewModel.selectContact(contact.id)
                         }
@@ -234,6 +244,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 timestamp = System.currentTimeMillis() - 1000L * 60 * 10,
                                 sourceName = "Contact: ${contact.firstName} ${contact.lastName}",
                                 fileMime = if (type == "image") "image/png" else if (type == "video") "video/mp4" else if (type == "audio") "audio/mpeg" else "application/pdf",
+                                path = path,
                                 onClick = {
                                     viewModel.selectContact(contact.id)
                                 }
@@ -748,13 +759,79 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray.copy(alpha = 0.2f))
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
+                            val isPdf = remember(file.name) { file.name.lowercase().endsWith(".pdf") }
+                            val hasDirectPreview = file.type == "image" || file.type == "video" || isPdf
+
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (hasDirectPreview && file.path.isNotEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1.3f)
+                                            .background(Color.Black.copy(alpha = 0.2f))
+                                    ) {
+                                        MediaPreviewBox(
+                                            pathOrName = file.path,
+                                            type = file.type,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1.3f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        val fileIcon = when (file.type) {
+                                            "image" -> Icons.Default.Image
+                                            "video" -> Icons.Default.Videocam
+                                            "audio" -> Icons.Default.Mic
+                                            else -> Icons.Default.InsertDriveFile
+                                        }
+                                        Icon(
+                                            imageVector = fileIcon,
+                                            contentDescription = file.type,
+                                            tint = WaterBlue,
+                                            modifier = Modifier.size(32.dp)
+                                        )
+                                    }
+                                }
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(0.9f)
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = file.name,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Text(
+                                        text = file.sourceName,
+                                        color = Color.Gray,
+                                        fontSize = 8.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
                             // Date text on top left
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
                                     .padding(6.dp)
                                     .clip(RoundedCornerShape(4.dp))
-                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .background(Color.Black.copy(alpha = 0.65f))
                                     .padding(horizontal = 4.dp, vertical = 2.dp)
                             ) {
                                 Text(
@@ -763,47 +840,6 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                            }
-
-                            // Dynamic icon based on type centered
-                            val fileIcon = when (file.type) {
-                                "image" -> Icons.Default.Image
-                                "video" -> Icons.Default.Videocam
-                                "audio" -> Icons.Default.Mic
-                                else -> Icons.Default.InsertDriveFile
-                            }
-
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(top = 22.dp, bottom = 6.dp, start = 8.dp, end = 8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Icon(
-                                    imageVector = fileIcon,
-                                    contentDescription = file.type,
-                                    tint = WaterBlue,
-                                    modifier = Modifier.size(32.dp)
-                                )
-
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = file.name,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = file.sourceName,
-                                        color = Color.Gray,
-                                        fontSize = 9.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
                             }
                         }
                     }

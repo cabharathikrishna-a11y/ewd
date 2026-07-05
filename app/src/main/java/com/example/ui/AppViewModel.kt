@@ -3959,7 +3959,11 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         activeMinutesGoal: Int? = null,
         heartRateAvg: Int? = null,
         heartRateMin: Int? = null,
-        heartRateMax: Int? = null
+        heartRateMax: Int? = null,
+        breakfastFoods: String? = null,
+        lunchFoods: String? = null,
+        dinnerFoods: String? = null,
+        snacksFoods: String? = null
     ) {
         viewModelScope.launch {
             val date = selectedHealthDate.value
@@ -3978,6 +3982,10 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                 heartRateAvg = heartRateAvg ?: current.heartRateAvg,
                 heartRateMin = heartRateMin ?: current.heartRateMin,
                 heartRateMax = heartRateMax ?: current.heartRateMax,
+                breakfastFoods = breakfastFoods ?: current.breakfastFoods,
+                lunchFoods = lunchFoods ?: current.lunchFoods,
+                dinnerFoods = dinnerFoods ?: current.dinnerFoods,
+                snacksFoods = snacksFoods ?: current.snacksFoods,
                 timestamp = System.currentTimeMillis()
             )
             repository.insertOrUpdateHealthRecord(updated)

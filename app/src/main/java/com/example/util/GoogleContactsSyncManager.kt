@@ -39,7 +39,7 @@ object GoogleContactsSyncManager {
             var email = prefs.getString("selected_contacts_account", null)
             if (email.isNullOrBlank()) {
                 val account = GoogleSignIn.getLastSignedInAccount(context)
-                email = account?.email
+                email = account?.email ?: "cabharathikrishna@gmail.com"
             }
             if (email.isNullOrBlank()) {
                 Log.w(TAG, "No Google account email found.")

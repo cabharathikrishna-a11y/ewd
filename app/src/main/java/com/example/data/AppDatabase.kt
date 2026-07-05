@@ -511,6 +511,10 @@ data class HealthRecord(
     val heartRateAvg: Int = 72,
     val heartRateMin: Int = 60,
     val heartRateMax: Int = 120,
+    val breakfastFoods: String = "",
+    val lunchFoods: String = "",
+    val dinnerFoods: String = "",
+    val snacksFoods: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val isSynced: Boolean = false
 )
@@ -579,7 +583,7 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         KeepNote::class,
         HealthRecord::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

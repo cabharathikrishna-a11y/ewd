@@ -117,13 +117,59 @@ fun TimerImmersiveContent(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                areControlsVisible = !areControlsVisible
-                isAntiBurnCenteredByTap = true
-                interactionCounter++
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = true)
+                    var isDrag = false
+                    var dragDirection: String? = null
+                    val touchSlop = viewConfiguration.touchSlop
+                    var totalDragX = 0f
+                    var totalDragY = 0f
+                    
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id }
+                        if (change == null || !change.pressed) {
+                            break
+                        }
+                        
+                        totalDragX = change.position.x - down.position.x
+                        totalDragY = change.position.y - down.position.y
+                        
+                        if (!isDrag) {
+                            if (kotlin.math.abs(totalDragX) > touchSlop || kotlin.math.abs(totalDragY) > touchSlop) {
+                                isDrag = true
+                                dragDirection = if (kotlin.math.abs(totalDragX) > kotlin.math.abs(totalDragY)) {
+                                    "horizontal"
+                                } else {
+                                    "vertical"
+                                }
+                            }
+                        }
+                        
+                        if (isDrag) {
+                            change.consume()
+                        }
+                    }
+                    
+                    if (isDrag) {
+                        if (dragDirection == "horizontal") {
+                            if (kotlin.math.abs(totalDragX) > 80f) {
+                                val currentMode = viewModel.timerDisplayMode.value
+                                val nextMode = if (currentMode == "digital") "flip" else "digital"
+                                viewModel.setTimerDisplayMode(nextMode)
+                            }
+                        } else if (dragDirection == "vertical") {
+                            if (kotlin.math.abs(totalDragY) > 80f) {
+                                viewModel.setTimerImmersive(false)
+                            }
+                        }
+                    } else {
+                        areControlsVisible = !areControlsVisible
+                        isAntiBurnCenteredByTap = true
+                        interactionCounter++
+                    }
+                }
             }
             .padding(24.dp)
     ) {
@@ -180,24 +226,7 @@ fun TimerImmersiveContent(
         Column(
             modifier = Modifier
                 .align(Alignment.Center)
-                .fillMaxWidth()
-                .pointerInput(Unit) {
-                    var dragSum = 0f
-                    detectHorizontalDragGestures(
-                        onDragStart = { dragSum = 0f },
-                        onDragEnd = {
-                            if (kotlin.math.abs(dragSum) > 35f) {
-                                val currentMode = viewModel.timerDisplayMode.value
-                                val nextMode = if (currentMode == "digital") "flip" else "digital"
-                                viewModel.setTimerDisplayMode(nextMode)
-                            }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            change.consume()
-                            dragSum += dragAmount
-                        }
-                    )
-                },
+                .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {

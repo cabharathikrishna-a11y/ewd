@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import com.example.util.MediaPreviewBox
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -957,6 +958,55 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     maxLines = 1,
                                                     modifier = Modifier.padding(top = 2.dp)
                                                 )
+                                            }
+
+                                            val parsedAttachment = remember(task.description) {
+                                                val match = Regex("""\[Attachment: ([^\]]+)\]""").find(task.description)
+                                                match?.groupValues?.get(1)?.trim()
+                                            }
+
+                                            if (showTaskDetails && !parsedAttachment.isNullOrEmpty() && parsedAttachment != "None") {
+                                                val previewType = remember(parsedAttachment) {
+                                                    val nameLower = parsedAttachment.lowercase()
+                                                    if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp")) {
+                                                        "image"
+                                                    } else if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mov") || nameLower.endsWith(".3gp") || nameLower.endsWith(".mkv")) {
+                                                        "video"
+                                                    } else if (nameLower.endsWith(".mp3") || nameLower.endsWith(".m4a") || nameLower.endsWith(".wav") || nameLower.endsWith(".aac")) {
+                                                        "audio"
+                                                    } else {
+                                                        "others"
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                                                ) {
+                                                    MediaPreviewBox(
+                                                        pathOrName = parsedAttachment,
+                                                        type = previewType,
+                                                        modifier = Modifier
+                                                            .size(48.dp)
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                    )
+                                                    Column {
+                                                        Text(
+                                                            text = parsedAttachment,
+                                                            fontSize = 11.sp,
+                                                            color = Color.LightGray,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Text(
+                                                            text = "Task Attachment",
+                                                            fontSize = 9.sp,
+                                                            color = Color.Gray
+                                                        )
+                                                    }
+                                                }
                                             }
 
                                             // Metadata Row: Due Date, Start Time, and Reminder Alarms
@@ -2079,6 +2129,48 @@ fun KanbanColumn(
                                 )
                             }
 
+                            val parsedAttachment = remember(task.description) {
+                                val match = Regex("""\[Attachment: ([^\]]+)\]""").find(task.description)
+                                match?.groupValues?.get(1)?.trim()
+                            }
+                            if (!parsedAttachment.isNullOrEmpty() && parsedAttachment != "None") {
+                                val previewType = remember(parsedAttachment) {
+                                    val nameLower = parsedAttachment.lowercase()
+                                    if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp")) {
+                                        "image"
+                                    } else if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mov") || nameLower.endsWith(".3gp") || nameLower.endsWith(".mkv")) {
+                                        "video"
+                                    } else if (nameLower.endsWith(".mp3") || nameLower.endsWith(".m4a") || nameLower.endsWith(".wav") || nameLower.endsWith(".aac")) {
+                                        "audio"
+                                    } else {
+                                        "others"
+                                    }
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(start = 32.dp, top = 4.dp, bottom = 4.dp)
+                                ) {
+                                    MediaPreviewBox(
+                                        pathOrName = parsedAttachment,
+                                        type = previewType,
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                    )
+                                    Column {
+                                        Text(
+                                            text = parsedAttachment,
+                                            fontSize = 10.sp,
+                                            color = Color.LightGray,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+
                             // Metadata Row: Due Date, Start Time, and Reminder Alarms
                             val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
                             val parsedTime = remember(task.description) {
@@ -2805,6 +2897,60 @@ fun TaskEditorFullScreen(
                             .weight(if (task != null) 0.5f else 1f)
                             .padding(horizontal = 0.dp)
                     )
+
+                    if (taskAttachment != "None" && taskAttachment.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        val previewType = remember(taskAttachment) {
+                            val nameLower = taskAttachment.lowercase()
+                            if (nameLower.endsWith(".png") || nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg") || nameLower.endsWith(".webp")) {
+                                "image"
+                            } else if (nameLower.endsWith(".mp4") || nameLower.endsWith(".mov") || nameLower.endsWith(".3gp") || nameLower.endsWith(".mkv")) {
+                                "video"
+                            } else if (nameLower.endsWith(".mp3") || nameLower.endsWith(".m4a") || nameLower.endsWith(".wav") || nameLower.endsWith(".aac")) {
+                                "audio"
+                            } else {
+                                "others"
+                            }
+                        }
+
+                        Text(
+                            text = "ATTACHED FILE",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Gray,
+                                letterSpacing = 1.sp
+                            ),
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        ) {
+                            MediaPreviewBox(
+                                pathOrName = taskAttachment,
+                                type = previewType,
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                            Column {
+                                Text(
+                                    text = taskAttachment,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Tap attachment menu to change or remove",
+                                    color = Color.Gray,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
 
                     if (task != null) {
                         HorizontalDivider(color = Color.Gray.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 8.dp))

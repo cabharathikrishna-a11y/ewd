@@ -63,9 +63,9 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     // Ensure we have a non-null record for the selected date
     val record = rawRecord ?: HealthRecord(dateString = selectedDate)
 
-    // Screen Sub-Tabs: 0 = Summary, 1 = Trends & Analytics, 2 = Google Cloud Sync
-    var selectedSubTab by remember { mutableIntStateOf(0) }
     var showStepsDetails by remember { mutableStateOf(false) }
+    var showSleepDetails by remember { mutableStateOf(false) }
+    var showFoodDetails by remember { mutableStateOf(false) }
 
     // Dialog state controllers
     var showManualLogDialog by remember { mutableStateOf(false) }
@@ -127,6 +127,18 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 record = record,
                 onBack = { showStepsDetails = false }
             )
+        } else if (showSleepDetails) {
+            SleepDetailsPage(
+                viewModel = viewModel,
+                record = record,
+                onBack = { showSleepDetails = false }
+            )
+        } else if (showFoodDetails) {
+            FoodDetailsPage(
+                viewModel = viewModel,
+                record = record,
+                onBack = { showFoodDetails = false }
+            )
         } else {
             Column(
                 modifier = Modifier
@@ -160,18 +172,33 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 // Selected date display and editor selector
                 IconButton(
                     onClick = {
-                        // Toggle date to yesterday or today
                         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                        val today = viewModel.getCurrentDateString()
-                        if (selectedDate == today) {
-                            val cal = Calendar.getInstance()
-                            cal.add(Calendar.DATE, -1)
-                            viewModel.selectHealthDate(sdf.format(cal.time))
-                            Toast.makeText(context, "Switched to Yesterday", Toast.LENGTH_SHORT).show()
-                        } else {
-                            viewModel.selectHealthDate(today)
-                            Toast.makeText(context, "Switched to Today", Toast.LENGTH_SHORT).show()
+                        val calendar = Calendar.getInstance()
+                        try {
+                            val parsedDate = sdf.parse(selectedDate)
+                            if (parsedDate != null) {
+                                calendar.time = parsedDate
+                            }
+                        } catch (e: Exception) {
+                            // ignore, fallback to current time
                         }
+                        
+                        val datePickerDialog = android.app.DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                val cal = Calendar.getInstance()
+                                cal.set(Calendar.YEAR, year)
+                                cal.set(Calendar.MONTH, month)
+                                cal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                val newDateStr = sdf.format(cal.time)
+                                viewModel.selectHealthDate(newDateStr)
+                                Toast.makeText(context, "Selected: $newDateStr", Toast.LENGTH_SHORT).show()
+                            },
+                            calendar.get(Calendar.YEAR),
+                            calendar.get(Calendar.MONTH),
+                            calendar.get(Calendar.DAY_OF_MONTH)
+                        )
+                        datePickerDialog.show()
                     },
                     modifier = Modifier
                         .background(Color.White.copy(alpha = 0.08f), CircleShape)
@@ -186,10 +213,27 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             }
 
             // Current date bar banner
-            val displayDateText = if (selectedDate == viewModel.getCurrentDateString()) {
-                "Today (${selectedDate})"
-            } else {
-                "Yesterday (${selectedDate})"
+            val displayDateText = try {
+                val sdfInput = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                val parsed = sdfInput.parse(selectedDate)
+                if (parsed != null) {
+                    val todayStr = viewModel.getCurrentDateString()
+                    val cal = Calendar.getInstance()
+                    val yesterdayStr = sdfInput.format(cal.time)
+                    
+                    when (selectedDate) {
+                        todayStr -> "Today (${selectedDate})"
+                        yesterdayStr -> "Yesterday (${selectedDate})"
+                        else -> {
+                            val sdfDisplay = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.US)
+                            sdfDisplay.format(parsed)
+                        }
+                    }
+                } else {
+                    selectedDate
+                }
+            } catch (e: Exception) {
+                selectedDate
             }
             Surface(
                 color = Color.White.copy(alpha = 0.05f),
@@ -254,77 +298,27 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 }
             }
 
-            // Sub-Tabs row selector
-            TabRow(
-                selectedTabIndex = selectedSubTab,
-                containerColor = Color.Transparent,
-                contentColor = WaterBlue,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedSubTab]),
-                        color = WaterBlue
-                    )
-                },
-                divider = { HorizontalDivider(color = Color.White.copy(alpha = 0.08f)) },
-                modifier = Modifier.padding(bottom = 16.dp)
-            ) {
-                Tab(
-                    selected = selectedSubTab == 0,
-                    onClick = { selectedSubTab = 0 },
-                    text = { Text("Summary", fontWeight = FontWeight.Bold) }
-                )
-                Tab(
-                    selected = selectedSubTab == 1,
-                    onClick = { selectedSubTab = 1 },
-                    text = { Text("Trends", fontWeight = FontWeight.Bold) }
-                )
-                Tab(
-                    selected = selectedSubTab == 2,
-                    onClick = { selectedSubTab = 2 },
-                    text = { Text("Google Sync", fontWeight = FontWeight.Bold) }
-                )
-            }
-
-            // Main body area based on active subtab
+            // Main body area showing Summary Tab
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                when (selectedSubTab) {
-                    0 -> SummaryTab(
-                        viewModel = viewModel,
-                        record = record,
-                        onLogMetric = { metric ->
-                            metricToLog = metric
-                            showManualLogDialog = true
-                        },
-                        onWaterIncrement = { amountMl ->
-                            val currentWater = record.waterMl
-                            viewModel.updateHealthMetric(waterMl = currentWater + amountMl)
-                        },
-                        onStepsClick = { showStepsDetails = true }
-                    )
-                    1 -> TrendsTab(allRecords = allRecords)
-                    2 -> GoogleSyncTab(
-                        statusMessage = googleFitSyncStatus,
-                        onConnectFit = {
-                            viewModel.connectAndSyncGoogleFit(context)
-                        },
-                        onClearCache = {
-                            coroutineScope.launch {
-                                viewModel.updateHealthMetric(
-                                    steps = 0,
-                                    sleepMinutes = 0,
-                                    waterMl = 0,
-                                    caloriesBurned = 0,
-                                    activeMinutes = 0
-                                )
-                                Toast.makeText(context, "Local metrics reset to baseline.", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                }
+                SummaryTab(
+                    viewModel = viewModel,
+                    record = record,
+                    onLogMetric = { metric ->
+                        metricToLog = metric
+                        showManualLogDialog = true
+                    },
+                    onWaterIncrement = { amountMl ->
+                        val currentWater = record.waterMl
+                        viewModel.updateHealthMetric(waterMl = currentWater + amountMl)
+                    },
+                    onStepsClick = { showStepsDetails = true },
+                    onSleepClick = { showSleepDetails = true },
+                    onFoodClick = { showFoodDetails = true }
+                )
             }
         }
     }
@@ -632,7 +626,9 @@ fun SummaryTab(
     record: HealthRecord,
     onLogMetric: (String) -> Unit,
     onWaterIncrement: (Int) -> Unit,
-    onStepsClick: () -> Unit
+    onStepsClick: () -> Unit,
+    onSleepClick: () -> Unit,
+    onFoodClick: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -727,18 +723,14 @@ fun SummaryTab(
                         icon = Icons.Default.Hotel,
                         progress = (record.sleepMinutes.toFloat() / record.sleepGoalMinutes.toFloat()).coerceIn(0f, 1f),
                         color = Color(0xFF9575CD),
-                        onLogClick = { onLogMetric("Sleep") }
+                        onLogClick = { onLogMetric("Sleep") },
+                        onCardClick = onSleepClick
                     )
                 }
                 Box(modifier = Modifier.weight(1f)) {
-                    MetricDetailCard(
-                        title = "Food Tracker",
-                        metric = "${record.caloriesBurned} kcal",
-                        target = "Goal: ${record.calorieGoal} kcal",
-                        icon = Icons.Default.Restaurant,
-                        progress = (record.caloriesBurned.toFloat() / record.calorieGoal.toFloat()).coerceIn(0f, 1f),
-                        color = Color(0xFFFFA726),
-                        onLogClick = { onLogMetric("Calories") }
+                    FoodTrackerCard(
+                        record = record,
+                        onClick = onFoodClick
                     )
                 }
             }
@@ -1358,13 +1350,22 @@ fun MetricDetailCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     progress: Float,
     color: Color,
-    onLogClick: () -> Unit
+    onLogClick: () -> Unit,
+    onCardClick: (() -> Unit)? = null
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
         shape = RoundedCornerShape(14.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onCardClick != null) {
+                    Modifier.clickable { onCardClick() }
+                } else {
+                    Modifier
+                }
+            )
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -1563,7 +1564,8 @@ fun TrendsTab(allRecords: List<HealthRecord>) {
                     ) {
                         Column {
                             Text(text = rec.dateString, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                            Text(text = "Sleep: ${rec.sleepMinutes / 60}h | Water: ${rec.waterMl}ml | Food: ${rec.caloriesBurned}kcal", color = Color.Gray, fontSize = 11.sp)
+                            val loggedMealCount = listOf(rec.breakfastFoods, rec.lunchFoods, rec.dinnerFoods, rec.snacksFoods).count { it.isNotEmpty() }
+                            Text(text = "Sleep: ${rec.sleepMinutes / 60}h | Water: ${rec.waterMl}ml | Food: $loggedMealCount meals", color = Color.Gray, fontSize = 11.sp)
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
@@ -2009,6 +2011,1058 @@ fun StepsDetailsPage(
                         color = if (isPermissionGranted) Color.Gray else Color.Black,
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SleepDetailsPage(
+    viewModel: AppViewModel,
+    record: HealthRecord,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val allRecords by viewModel.healthRecordsList.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedHealthDate.collectAsStateWithLifecycle()
+
+    var startHour by remember { mutableIntStateOf(23) }
+    var startMinute by remember { mutableIntStateOf(0) }
+    var endHour by remember { mutableIntStateOf(7) }
+    var endMinute by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(record.dateString, record.sleepMinutes) {
+        val totalMins = record.sleepMinutes
+        if (totalMins <= 0) {
+            startHour = 23
+            startMinute = 0
+            endHour = 7
+            endMinute = 0
+        } else {
+            endHour = 7
+            endMinute = 0
+            val startTotalMinutes = (7 * 60 - totalMins + 1440) % 1440
+            startHour = startTotalMinutes / 60
+            startMinute = startTotalMinutes % 60
+        }
+    }
+
+    val computedMinutes = remember(startHour, startMinute, endHour, endMinute) {
+        val startTotal = startHour * 60 + startMinute
+        val endTotal = endHour * 60 + endMinute
+        if (endTotal >= startTotal) {
+            endTotal - startTotal
+        } else {
+            (1440 - startTotal) + endTotal
+        }
+    }
+
+    val computedHours = computedMinutes / 60.0f
+
+    // Format display for selected date
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val displayDateText = try {
+        val parsed = sdf.parse(selectedDate)
+        if (parsed != null) {
+            val sdfDisplay = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.US)
+            sdfDisplay.format(parsed)
+        } else {
+            selectedDate
+        }
+    } catch (e: Exception) {
+        selectedDate
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07080F))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Header Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+                ) {
+                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "SLEEP TRACKER",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF9575CD),
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        text = "Sleep Analytics",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // Calendar selector button (top right)
+            IconButton(
+                onClick = {
+                    val calendar = Calendar.getInstance()
+                    try {
+                        val parsedDate = sdf.parse(selectedDate)
+                        if (parsedDate != null) {
+                            calendar.time = parsedDate
+                        }
+                    } catch (e: Exception) {}
+
+                    val datePickerDialog = android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val cal = Calendar.getInstance()
+                            cal.set(Calendar.YEAR, year)
+                            cal.set(Calendar.MONTH, month)
+                            cal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            val newDateStr = sdf.format(cal.time)
+                            viewModel.selectHealthDate(newDateStr)
+                            Toast.makeText(context, "Selected date: $newDateStr", Toast.LENGTH_SHORT).show()
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                    datePickerDialog.show()
+                },
+                modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+            ) {
+                Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date", tint = Color.White)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Active Date Sleep Record Summary Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = displayDateText,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        val hoursNum = record.sleepMinutes / 60
+                        val minsNum = record.sleepMinutes % 60
+                        Text(
+                            text = "${hoursNum}h ${minsNum}m",
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Goal: ${record.sleepGoalMinutes / 60}h (480m)",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    
+                    // State classification banner inside Card
+                    val sleepHours = record.sleepMinutes / 60.0f
+                    val (statusText, statusColor) = when {
+                        sleepHours < 6.0f -> "Inadequate" to Color(0xFFEF5350)
+                        sleepHours < 7.0f -> "Needs Improvement" to Color(0xFFFFCA28)
+                        else -> "Optimal" to Color(0xFF66BB6A)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(statusColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 7-Day Sleep Data Bar Graph Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "7-Day Sleep History",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Click any bar to view or edit that day's sleep",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Build past 7 days of sleep data ending at selectedDate
+                val last7Days = (0..6).map { offset ->
+                    val cal = Calendar.getInstance()
+                    try {
+                        val parsed = sdf.parse(selectedDate)
+                        if (parsed != null) cal.time = parsed
+                    } catch (e: Exception) {}
+                    cal.add(Calendar.DATE, -offset)
+                    sdf.format(cal.time)
+                }.reversed() // chronological order
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    last7Days.forEach { barDateString ->
+                        val matchingRecord = allRecords.find { it.dateString == barDateString }
+                        val mins = matchingRecord?.sleepMinutes ?: 0
+                        val hrs = mins / 60.0f
+                        
+                        val isCurrentSelected = barDateString == selectedDate
+                        
+                        // Height proportional to duration. Let's set 10 hours as 100% height = 130.dp
+                        val barHeight = (120 * (hrs / 10f).coerceIn(0.04f, 1f)).dp
+                        
+                        val barColor = when {
+                            hrs < 6.0f -> Color(0xFFEF5350)
+                            hrs < 7.0f -> Color(0xFFFFCA28)
+                            else -> Color(0xFF66BB6A)
+                        }
+
+                        // Day label (e.g., "Mon")
+                        val dayLabel = try {
+                            val parsedDate = sdf.parse(barDateString)
+                            if (parsedDate != null) {
+                                SimpleDateFormat("EEE", Locale.US).format(parsedDate)
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+
+                        // Short Date label (e.g., "07/05")
+                        val shortDateLabel = try {
+                            val parsedDate = sdf.parse(barDateString)
+                            if (parsedDate != null) {
+                                SimpleDateFormat("MM/dd", Locale.US).format(parsedDate)
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    viewModel.selectHealthDate(barDateString)
+                                }
+                                .padding(horizontal = 2.dp)
+                        ) {
+                            // Value text above the bar
+                            Text(
+                                text = if (hrs > 0f) String.format(Locale.US, "%.1fh", hrs) else "-",
+                                fontSize = 10.sp,
+                                color = if (isCurrentSelected) Color.White else Color.Gray,
+                                fontWeight = if (isCurrentSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // The vertical bar
+                            Box(
+                                modifier = Modifier
+                                    .height(barHeight)
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                    .background(
+                                        if (isCurrentSelected) barColor else barColor.copy(alpha = 0.5f)
+                                    )
+                                    .border(
+                                        width = if (isCurrentSelected) 2.dp else 0.dp,
+                                        color = if (isCurrentSelected) Color.White else Color.Transparent,
+                                        shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)
+                                    )
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Day name
+                            Text(
+                                text = dayLabel,
+                                fontSize = 10.sp,
+                                color = if (isCurrentSelected) Color.White else Color.Gray,
+                                fontWeight = if (isCurrentSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            // Date
+                            Text(
+                                text = shortDateLabel,
+                                fontSize = 8.sp,
+                                color = if (isCurrentSelected) Color.White.copy(alpha = 0.7f) else Color.Gray.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Bedtime and Wakeup editor cards
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Edit Sleep Times",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Adjust your bedtime and wake up time below to calculate sleep duration",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Bedtime Controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Bedtime (Sleep Start)", fontSize = 13.sp, color = Color.LightGray, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = String.format(Locale.US, "%02d:%02d", startHour, startMinute),
+                            fontSize = 24.sp,
+                            color = Color(0xFF9575CD),
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Hour adjusting
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Hours", fontSize = 9.sp, color = Color.Gray)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { startHour = (startHour + 23) % 24 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Remove, contentDescription = "Decrease start hour", tint = Color.White)
+                                }
+                                Text(
+                                    text = String.format(Locale.US, "%02d", startHour),
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(
+                                    onClick = { startHour = (startHour + 1) % 24 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Add, contentDescription = "Increase start hour", tint = Color.White)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Minute adjusting
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Minutes", fontSize = 9.sp, color = Color.Gray)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { startMinute = (startMinute + 55) % 60 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Remove, contentDescription = "Decrease start minute", tint = Color.White)
+                                }
+                                Text(
+                                    text = String.format(Locale.US, "%02d", startMinute),
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(
+                                    onClick = { startMinute = (startMinute + 5) % 60 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Add, contentDescription = "Increase start minute", tint = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.08f),
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+
+                // Wake up time Controls
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Wake Up (Sleep End)", fontSize = 13.sp, color = Color.LightGray, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = String.format(Locale.US, "%02d:%02d", endHour, endMinute),
+                            fontSize = 24.sp,
+                            color = Color(0xFF66BB6A),
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Hour adjusting
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Hours", fontSize = 9.sp, color = Color.Gray)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { endHour = (endHour + 23) % 24 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Remove, contentDescription = "Decrease end hour", tint = Color.White)
+                                }
+                                Text(
+                                    text = String.format(Locale.US, "%02d", endHour),
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(
+                                    onClick = { endHour = (endHour + 1) % 24 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Add, contentDescription = "Increase end hour", tint = Color.White)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Minute adjusting
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Minutes", fontSize = 9.sp, color = Color.Gray)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { endMinute = (endMinute + 55) % 60 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Remove, contentDescription = "Decrease end minute", tint = Color.White)
+                                }
+                                Text(
+                                    text = String.format(Locale.US, "%02d", endMinute),
+                                    fontSize = 16.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                IconButton(
+                                    onClick = { endMinute = (endMinute + 5) % 60 },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(imageVector = Icons.Default.Add, contentDescription = "Increase end minute", tint = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.08f),
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+
+                // Reactive calculation summary
+                val compHoursPart = computedMinutes / 60
+                val compMinsPart = computedMinutes % 60
+                
+                val (badgeText, badgeColor) = when {
+                    computedHours < 6.0f -> "Inadequate (< 6h)" to Color(0xFFEF5350)
+                    computedHours < 7.0f -> "Needs Improvement (6 - 7h)" to Color(0xFFFFCA28)
+                    else -> "Optimal (>= 7h)" to Color(0xFF66BB6A)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(badgeColor.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .border(1.dp, badgeColor.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Calculated Duration", fontSize = 11.sp, color = Color.Gray)
+                        Text(
+                            text = "${compHoursPart} hrs ${compMinsPart} mins",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .background(badgeColor.copy(alpha = 0.15f), CircleShape)
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            color = badgeColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // SAVE BUTTON
+                Button(
+                    onClick = {
+                        viewModel.updateHealthMetric(sleepMinutes = computedMinutes)
+                        Toast.makeText(context, "Sleep hours updated successfully!", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9575CD)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Sleep Record", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FoodTrackerCard(
+    record: HealthRecord,
+    onClick: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Restaurant,
+                        contentDescription = null,
+                        tint = Color(0xFFFFA726),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Food Log",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.LightGray
+                    )
+                }
+                
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Color.Gray,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Display logged meals status
+            val meals = listOf(
+                "BF" to record.breakfastFoods.isNotEmpty(),
+                "LH" to record.lunchFoods.isNotEmpty(),
+                "DN" to record.dinnerFoods.isNotEmpty(),
+                "SN" to record.snacksFoods.isNotEmpty()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                meals.forEach { (name, logged) ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                if (logged) Color(0xFFFFA726).copy(alpha = 0.2f) else Color.White.copy(alpha = 0.04f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (logged) Color(0xFFFFA726).copy(alpha = 0.4f) else Color.White.copy(alpha = 0.08f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = name,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (logged) Color(0xFFFFA726) else Color.Gray
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Show a preview of logged foods
+            val previewText = remember(record) {
+                val list = mutableListOf<String>()
+                if (record.breakfastFoods.isNotEmpty()) list.add("BF: ${record.breakfastFoods}")
+                if (record.lunchFoods.isNotEmpty()) list.add("LH: ${record.lunchFoods}")
+                if (record.dinnerFoods.isNotEmpty()) list.add("DN: ${record.dinnerFoods}")
+                if (record.snacksFoods.isNotEmpty()) list.add("SN: ${record.snacksFoods}")
+                
+                if (list.isEmpty()) "No meals logged today" else list.joinToString(", ")
+            }
+
+            Text(
+                text = previewText,
+                fontSize = 11.sp,
+                color = if (previewText == "No meals logged today") Color.Gray else Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun FoodDetailsPage(
+    viewModel: AppViewModel,
+    record: HealthRecord,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val allRecords by viewModel.healthRecordsList.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedHealthDate.collectAsStateWithLifecycle()
+
+    var breakfastInput by remember { mutableStateOf(record.breakfastFoods) }
+    var lunchInput by remember { mutableStateOf(record.lunchFoods) }
+    var dinnerInput by remember { mutableStateOf(record.dinnerFoods) }
+    var snacksInput by remember { mutableStateOf(record.snacksFoods) }
+
+    LaunchedEffect(record.dateString, record.breakfastFoods, record.lunchFoods, record.dinnerFoods, record.snacksFoods) {
+        breakfastInput = record.breakfastFoods
+        lunchInput = record.lunchFoods
+        dinnerInput = record.dinnerFoods
+        snacksInput = record.snacksFoods
+    }
+
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val displayDateText = try {
+        val parsed = sdf.parse(selectedDate)
+        if (parsed != null) {
+            val sdfDisplay = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.US)
+            sdfDisplay.format(parsed)
+        } else {
+            selectedDate
+        }
+    } catch (e: Exception) {
+        selectedDate
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07080F))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+                ) {
+                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "NUTRITION JOURNAL",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFA726),
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        text = "Mindful Food Log",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // Date picker
+            IconButton(
+                onClick = {
+                    val calendar = Calendar.getInstance()
+                    try {
+                        val parsedDate = sdf.parse(selectedDate)
+                        if (parsedDate != null) {
+                            calendar.time = parsedDate
+                        }
+                    } catch (e: Exception) {}
+
+                    val datePickerDialog = android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val cal = Calendar.getInstance()
+                            cal.set(Calendar.YEAR, year)
+                            cal.set(Calendar.MONTH, month)
+                            cal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            val newDateStr = sdf.format(cal.time)
+                            viewModel.selectHealthDate(newDateStr)
+                            Toast.makeText(context, "Selected: $newDateStr", Toast.LENGTH_SHORT).show()
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                    datePickerDialog.show()
+                },
+                modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+            ) {
+                Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date", tint = Color.White)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Active Date Banner
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color(0xFFFFA726).copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = Icons.Default.MenuBook, contentDescription = null, tint = Color(0xFFFFA726))
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = displayDateText,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "We focus on clean, mindful eating rather than calorie counting.",
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Meals entry list
+        Text(
+            text = "What did you eat today?",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        val mealSections = listOf(
+            Triple("Breakfast", breakfastInput, { v: String -> breakfastInput = v }),
+            Triple("Lunch", lunchInput, { v: String -> lunchInput = v }),
+            Triple("Dinner", dinnerInput, { v: String -> dinnerInput = v }),
+            Triple("Snacks", snacksInput, { v: String -> snacksInput = v })
+        )
+
+        mealSections.forEach { (title, value, onValueChange) ->
+            val mealIcon = when (title) {
+                "Breakfast" -> Icons.Default.FreeBreakfast
+                "Lunch" -> Icons.Default.Restaurant
+                "Dinner" -> Icons.Default.LocalDining
+                else -> Icons.Default.Fastfood
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Icon(imageVector = mealIcon, contentDescription = null, tint = Color(0xFFFFA726), modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        placeholder = { Text("e.g., Oatmeal with berries and coffee", fontSize = 13.sp, color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFFFA726),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.08f),
+                            focusedContainerColor = Color.Black.copy(alpha = 0.2f),
+                            unfocusedContainerColor = Color.Black.copy(alpha = 0.1f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = false,
+                        maxLines = 3,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Save Button
+        Button(
+            onClick = {
+                viewModel.updateHealthMetric(
+                    breakfastFoods = breakfastInput,
+                    lunchFoods = lunchInput,
+                    dinnerFoods = dinnerInput,
+                    snacksFoods = snacksInput
+                )
+                Toast.makeText(context, "Meals updated successfully!", Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFA726)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Save, contentDescription = null, tint = Color.White)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Save Meals Log", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 7-Day History list
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "7-Day Food Journal History",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Build past 7 days of food logs ending at selectedDate
+                val last7Days = (0..6).map { offset ->
+                    val cal = Calendar.getInstance()
+                    try {
+                        val parsed = sdf.parse(selectedDate)
+                        if (parsed != null) cal.time = parsed
+                    } catch (e: Exception) {}
+                    cal.add(Calendar.DATE, -offset)
+                    sdf.format(cal.time)
+                }
+
+                last7Days.forEach { historyDate ->
+                    val matchingRecord = allRecords.find { it.dateString == historyDate }
+                    val hasFood = matchingRecord != null && (
+                        matchingRecord.breakfastFoods.isNotEmpty() ||
+                        matchingRecord.lunchFoods.isNotEmpty() ||
+                        matchingRecord.dinnerFoods.isNotEmpty() ||
+                        matchingRecord.snacksFoods.isNotEmpty()
+                    )
+
+                    val isCurrent = historyDate == selectedDate
+
+                    val dateLabel = try {
+                        val parsed = sdf.parse(historyDate)
+                        if (parsed != null) {
+                            if (historyDate == viewModel.getCurrentDateString()) {
+                                "Today"
+                            } else {
+                                SimpleDateFormat("EEEE, MMM d", Locale.US).format(parsed)
+                            }
+                        } else {
+                            historyDate
+                        }
+                    } catch (e: Exception) {
+                        historyDate
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.selectHealthDate(historyDate) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = dateLabel,
+                                fontSize = 13.sp,
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isCurrent) Color(0xFFFFA726) else Color.White
+                            )
+                            
+                            if (matchingRecord != null && hasFood) {
+                                val foodSummary = buildString {
+                                    if (matchingRecord.breakfastFoods.isNotEmpty()) append("BF: ${matchingRecord.breakfastFoods} | ")
+                                    if (matchingRecord.lunchFoods.isNotEmpty()) append("LH: ${matchingRecord.lunchFoods} | ")
+                                    if (matchingRecord.dinnerFoods.isNotEmpty()) append("DN: ${matchingRecord.dinnerFoods} | ")
+                                    if (matchingRecord.snacksFoods.isNotEmpty()) append("SN: ${matchingRecord.snacksFoods}")
+                                }.trim().removeSuffix("|").trim()
+                                
+                                Text(
+                                    text = foodSummary,
+                                    fontSize = 11.sp,
+                                    color = Color.Gray,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else {
+                                Text(
+                                    text = "No food logged for this day",
+                                    fontSize = 11.sp,
+                                    color = Color.DarkGray
+                                )
+                            }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .border(
+                                    1.dp,
+                                    if (hasFood) Color(0xFF66BB6A) else Color.White.copy(alpha = 0.2f),
+                                    CircleShape
+                                )
+                                .background(
+                                    if (hasFood) Color(0xFF66BB6A).copy(alpha = 0.15f) else Color.Transparent,
+                                    CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (hasFood) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Color(0xFF66BB6A),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (historyDate != last7Days.last()) {
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    }
                 }
             }
         }

@@ -234,6 +234,13 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             icon = Icons.Default.AccountBox,
                             iconBgColor = Color(0xFF03A9F4)
                         ) { activePage = 8 }
+                        HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
+                        SettingsRowItem(
+                            title = "18. FITNESS SYNC & TRENDS",
+                            subtitle = "Google Fit synchronization, activity graphs & step details tracker",
+                            icon = Icons.Default.DirectionsWalk,
+                            iconBgColor = Color(0xFFFFA726)
+                        ) { activePage = 20 }
                     }
                 }
 
@@ -467,6 +474,13 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
         18 -> {
             SettingsDeepLinksPage(
+                viewModel = viewModel,
+                onBack = { activePage = 0 }
+            )
+        }
+
+        20 -> {
+            SettingsFitnessSyncTrendsPage(
                 viewModel = viewModel,
                 onBack = { activePage = 0 }
             )
