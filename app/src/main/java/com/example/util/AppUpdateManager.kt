@@ -1274,12 +1274,13 @@ object AppUpdateManager {
                     return@launch
                 }
 
-                // Secure user data one last time before initiating installation
-                withContext(Dispatchers.IO) {
+                // Secure user data asynchronously so we don't block launching the package installer
+                updateScope.launch(Dispatchers.IO) {
                     try {
-                        Log.i(TAG, "Securing user data immediately prior to package installation...")
+                        Log.i(TAG, "Securing user data asynchronously in background prior to package installation...")
                         val db = com.example.data.AppDatabase.getInstance(context)
                         com.example.util.DatabaseBackupHelper.autoBackup(context, db)
+                        Log.i(TAG, "Asynchronous pre-installation backup finished.")
                     } catch (e: Exception) {
                         Log.e(TAG, "Pre-installation database auto-backup failed", e)
                     }

@@ -55,6 +55,7 @@ import kotlinx.coroutines.withContext
 
 class ReminderActivity : ComponentActivity() {
 
+    private var mediaPlayer: android.media.MediaPlayer? = null
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
     private var taskId: Int = -1
@@ -369,51 +370,121 @@ class ReminderActivity : ComponentActivity() {
             return
         }
 
-        // Audio playback configured using TYPE_NOTIFICATION (single shot alert)
-        try {
-            val alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-            ringtone = RingtoneManager.getRingtone(applicationContext, alertUri)?.apply {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    val attributes = android.media.AudioAttributes.Builder()
-                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                    this.audioAttributes = attributes
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    // Always false: "single notification sound for any type of priority"
-                    isLooping = false
-                }
-                play()
-            }
-        } catch (e: Exception) {
-            Log.e("ReminderActivity", "Ringtone launch omitted: ${e.message}")
+        val alarmSoundKey = when (taskPriority.uppercase()) {
+            "HIGH" -> "task_high_alarm_sound"
+            "MEDIUM" -> "task_medium_alarm_sound"
+            else -> "task_low_alarm_sound"
         }
+        val isAlarmSoundEnabled = prefsForSilent.getBoolean(alarmSoundKey, false)
 
-        // Single short vibration for all priorities
-        try {
-            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-            val taskVibrationEnabled = prefs.getBoolean("task_vibration_enabled", true)
-            if (taskVibrationEnabled) {
-                vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-                vibrator?.let { v ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        v.vibrate(VibrationEffect.createOneShot(600, VibrationEffect.DEFAULT_AMPLITUDE))
-                    } else {
-                        @Suppress("DEPRECATION")
-                        v.vibrate(600)
+        if (isAlarmSoundEnabled) {
+            Log.d("ReminderActivity", "Continuous Alarm Sound is enabled for priority: $taskPriority")
+            try {
+                val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                mediaPlayer = android.media.MediaPlayer().apply {
+                    setDataSource(applicationContext, alarmUri)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        setAudioAttributes(
+                            android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .build()
+                        )
+                    }
+                    isLooping = true
+                    prepare()
+                    start()
+                }
+            } catch (e: Exception) {
+                Log.e("ReminderActivity", "MediaPlayer alarm launch failed, trying ringtone: ${e.message}")
+                try {
+                    val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                    ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)?.apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            isLooping = true
+                        }
+                        play()
+                    }
+                } catch (ex: Exception) {
+                    Log.e("ReminderActivity", "Ringtone backup failed: ${ex.message}")
+                }
+            }
+
+            // Continuous vibration if vibration is enabled
+            try {
+                val taskVibrationEnabled = prefsForSilent.getBoolean("task_vibration_enabled", true)
+                if (taskVibrationEnabled) {
+                    vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    vibrator?.let { v ->
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            val pattern = longArrayOf(0, 800, 800)
+                            v.vibrate(VibrationEffect.createWaveform(pattern, 0))
+                        } else {
+                            @Suppress("DEPRECATION")
+                            val pattern = longArrayOf(0, 800, 800)
+                            v.vibrate(pattern, 0)
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("ReminderActivity", "Vibrator waveform launch failed: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e("ReminderActivity", "Vibrator launch failed: ${e.message}")
+        } else {
+            // Audio playback configured using TYPE_NOTIFICATION (single shot alert)
+            try {
+                val alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                ringtone = RingtoneManager.getRingtone(applicationContext, alertUri)?.apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        val attributes = android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                        this.audioAttributes = attributes
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        isLooping = false
+                    }
+                    play()
+                }
+            } catch (e: Exception) {
+                Log.e("ReminderActivity", "Ringtone launch omitted: ${e.message}")
+            }
+
+            // Single short vibration for all priorities
+            try {
+                val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                val taskVibrationEnabled = prefs.getBoolean("task_vibration_enabled", true)
+                if (taskVibrationEnabled) {
+                    vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    vibrator?.let { v ->
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            v.vibrate(VibrationEffect.createOneShot(600, VibrationEffect.DEFAULT_AMPLITUDE))
+                        } else {
+                            @Suppress("DEPRECATION")
+                            v.vibrate(600)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("ReminderActivity", "Vibrator launch failed: ${e.message}")
+            }
         }
     }
 
     private fun stopAlert() {
         try {
+            mediaPlayer?.let {
+                if (it.isPlaying) {
+                    it.stop()
+                }
+                it.release()
+            }
+            mediaPlayer = null
             ringtone?.stop()
             vibrator?.cancel()
         } catch (e: Exception) {

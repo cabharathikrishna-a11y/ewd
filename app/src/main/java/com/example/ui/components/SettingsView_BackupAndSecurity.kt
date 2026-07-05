@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -468,6 +470,7 @@ fun AppLockSettingsSection() {
 @Composable
 fun AppBlocksSettingsSection() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var hasPermission by remember { mutableStateOf(AppBlockHelper.hasUsageStatsPermission(context)) }
     var blockedApps by remember { mutableStateOf(AppBlockHelper.getBlockedApps(context)) }
     var selectedAppForLimit by remember { mutableStateOf<String?>(null) }
@@ -475,9 +478,30 @@ fun AppBlocksSettingsSection() {
     var showAddAppDialog by remember { mutableStateOf(false) }
     var newAppPackage by remember { mutableStateOf("") }
     
-    // Refresh permission status when entering
+    // State for all installed apps on device
+    var installedApps by remember { mutableStateOf<List<com.example.util.AppBlockHelper.AppInfo>>(emptyList()) }
+    var isLoadingApps by remember { mutableStateOf(true) }
+    var searchQuery by remember { mutableStateOf("") }
+    
+    // Refresh permission status when entering and load apps asynchronously
     LaunchedEffect(Unit) {
         hasPermission = AppBlockHelper.hasUsageStatsPermission(context)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            installedApps = com.example.util.AppBlockHelper.getInstalledApps(context)
+            isLoadingApps = false
+        }
+    }
+
+    // Format usage helper
+    fun formatUsageTime(seconds: Int): String {
+        val h = seconds / 3600
+        val m = (seconds % 3600) / 60
+        val s = seconds % 60
+        return when {
+            h > 0 -> "${h}h ${m}m"
+            m > 0 -> "${m}m ${s}s"
+            else -> "${s}s"
+        }
     }
     
     Column(
@@ -516,6 +540,7 @@ fun AppBlocksSettingsSection() {
             }
         }
         
+        // 1. Active Block Rules Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0E)),
             shape = RoundedCornerShape(12.dp),
@@ -530,17 +555,18 @@ fun AppBlocksSettingsSection() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Blocked Apps List", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Active Block Rules", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     IconButton(onClick = { showAddAppDialog = true }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add App", tint = Color.White)
+                        Icon(Icons.Default.Add, contentDescription = "Manual Add App", tint = Color.LightGray)
                     }
                 }
                 
                 if (blockedApps.isEmpty()) {
-                    Text("No apps added yet.", color = Color.Gray, fontSize = 11.sp)
+                    Text("No app limits configured. Enable blocks on any app in the directory below to restrict its usage.", color = Color.Gray, fontSize = 11.sp)
                 } else {
                     blockedApps.forEach { pkg ->
                         val limitMins = AppBlockHelper.getDailyLimitMinutes(context, pkg)
+                        val dailyUsageSecs = AppBlockHelper.getDailyUsageSeconds(context, pkg)
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -548,7 +574,14 @@ fun AppBlocksSettingsSection() {
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 AppListIcon(pkg = pkg)
-                                Text("Daily Limit: $limitMins minutes", color = Color.Gray, fontSize = 10.sp)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Limit: $limitMins min", color = Color(0xFFFFA726), fontSize = 10.sp)
+                                    Text("•", color = Color.DarkGray, fontSize = 10.sp)
+                                    Text("Today: ${formatUsageTime(dailyUsageSecs)}", color = if (dailyUsageSecs > 0) WaterBlue else Color.Gray, fontSize = 10.sp)
+                                }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 IconButton(onClick = {
@@ -562,6 +595,171 @@ fun AppBlocksSettingsSection() {
                                     blockedApps = AppBlockHelper.getBlockedApps(context)
                                 }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Installed Apps & Screen Time Directory Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0E)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Installed Apps & Screen Time", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Lists all user-launchable apps installed. Updates automatically.", color = Color.Gray, fontSize = 10.sp)
+                    }
+                    IconButton(onClick = {
+                        isLoadingApps = true
+                        scope.launch {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                installedApps = com.example.util.AppBlockHelper.getInstalledApps(context)
+                                isLoadingApps = false
+                            }
+                        }
+                    }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh Apps List", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                // Search Box
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search installed apps...", fontSize = 12.sp, color = Color.Gray) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = WaterBlue,
+                        unfocusedBorderColor = Color.DarkGray,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF141419),
+                        unfocusedContainerColor = Color(0xFF141419)
+                    )
+                )
+
+                if (isLoadingApps) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = WaterBlue, modifier = Modifier.size(24.dp))
+                    }
+                } else {
+                    val filteredApps = remember(searchQuery, installedApps) {
+                        if (searchQuery.isBlank()) {
+                            installedApps
+                        } else {
+                            installedApps.filter {
+                                it.label.contains(searchQuery, ignoreCase = true) ||
+                                it.packageName.contains(searchQuery, ignoreCase = true)
+                            }
+                        }
+                    }
+
+                    if (filteredApps.isEmpty()) {
+                        Text("No apps match your search.", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.padding(vertical = 8.dp))
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                                .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            filteredApps.forEach { app ->
+                                val isBlocked = blockedApps.contains(app.packageName)
+                                val dailyUsageSecs = AppBlockHelper.getDailyUsageSeconds(context, app.packageName)
+                                val limitMins = AppBlockHelper.getDailyLimitMinutes(context, app.packageName)
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        AppListIcon(pkg = app.packageName)
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Today: ${formatUsageTime(dailyUsageSecs)}",
+                                                color = if (dailyUsageSecs > 0) WaterBlue else Color.Gray,
+                                                fontSize = 10.sp
+                                            )
+                                            if (isBlocked) {
+                                                Text(
+                                                    text = "Limit: $limitMins min",
+                                                    color = Color(0xFFFFA726),
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        if (isBlocked) {
+                                            IconButton(onClick = {
+                                                selectedAppForLimit = app.packageName
+                                                limitMinutesText = limitMins.toString()
+                                            }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Edit,
+                                                    contentDescription = "Edit Limit",
+                                                    tint = Color.Gray,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                if (isBlocked) {
+                                                    AppBlockHelper.removeBlockedApp(context, app.packageName)
+                                                } else {
+                                                    AppBlockHelper.addBlockedApp(context, app.packageName)
+                                                }
+                                                blockedApps = AppBlockHelper.getBlockedApps(context)
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (isBlocked) Color(0xFF2D1515) else Color(0xFF1E1E24),
+                                                contentColor = if (isBlocked) Color.Red else Color.LightGray
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isBlocked) "Blocked" else "Block",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -609,14 +807,17 @@ fun AppBlocksSettingsSection() {
         if (showAddAppDialog) {
             AlertDialog(
                 onDismissRequest = { showAddAppDialog = false },
-                title = { Text("Add App to Block List") },
+                title = { Text("Add App via Package Name") },
                 text = {
-                    OutlinedTextField(
-                        value = newAppPackage,
-                        onValueChange = { newAppPackage = it },
-                        label = { Text("Package Name (e.g., com.facebook.katana)") },
-                        singleLine = true
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("For unlisted or system package names", color = Color.Gray, fontSize = 11.sp)
+                        OutlinedTextField(
+                            value = newAppPackage,
+                            onValueChange = { newAppPackage = it },
+                            label = { Text("Package Name (e.g. com.facebook.katana)") },
+                            singleLine = true
+                        )
+                    }
                 },
                 confirmButton = {
                     Button(

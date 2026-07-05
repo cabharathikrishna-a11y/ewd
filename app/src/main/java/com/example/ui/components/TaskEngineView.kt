@@ -936,14 +936,111 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            if (showTaskDetails && task.description.isNotEmpty()) {
+                                            
+                                            val cleanDesc = remember(task.description) {
+                                                task.description
+                                                    .replace(Regex("""\[Time: [^\]]+\]"""), "")
+                                                    .replace(Regex("""\[Reminders: [^\]]+\]"""), "")
+                                                    .replace(Regex("""\[Repeat: [^\]]+\]"""), "")
+                                                    .replace(Regex("""\[Duration: [^\]]+\]"""), "")
+                                                    .replace(Regex("""\[Attachment: [^\]]+\]"""), "")
+                                                    .replace(Regex("""\[Location: [^\]]+\]"""), "")
+                                                    .replace(Regex("""\[WontDo\]"""), "")
+                                                    .trim()
+                                            }
+
+                                            if (showTaskDetails && cleanDesc.isNotEmpty()) {
                                                 Text(
-                                                    text = task.description,
+                                                    text = cleanDesc,
                                                     fontSize = 11.sp,
                                                     color = Color.Gray,
                                                     maxLines = 1,
                                                     modifier = Modifier.padding(top = 2.dp)
                                                 )
+                                            }
+
+                                            // Metadata Row: Due Date, Start Time, and Reminder Alarms
+                                            val parsedTime = remember(task.description) {
+                                                val match = Regex("""\[Time: ([^\]]+)\]""").find(task.description)
+                                                match?.groupValues?.get(1)?.trim()
+                                            }
+                                            val parsedReminders = remember(task.description) {
+                                                val match = Regex("""\[Reminders: ([^\]]+)\]""").find(task.description)
+                                                val listStr = match?.groupValues?.get(1) ?: "None"
+                                                if (listStr == "None") emptyList() else listStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                            }
+
+                                            if (task.dueDateString.isNotEmpty() || !parsedTime.isNullOrEmpty() || parsedReminders.isNotEmpty()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    modifier = Modifier.padding(top = 2.dp)
+                                                ) {
+                                                    // 1. Due Date
+                                                    if (task.dueDateString.isNotEmpty()) {
+                                                        val isOverdue = task.dueDateString < todayStr && !task.isCompleted
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Event,
+                                                                contentDescription = "Due Date",
+                                                                tint = if (isOverdue) Color(0xFFF9325D) else Color(0xFF7B7B7F),
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                            Text(
+                                                                text = formatDueDate(task.dueDateString),
+                                                                color = if (isOverdue) Color(0xFFF9325D) else Color(0xFF7B7B7F),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Medium
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // 2. Start Time
+                                                    if (!parsedTime.isNullOrEmpty()) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.AccessTime,
+                                                                contentDescription = "Start Time",
+                                                                tint = Color(0xFF2E6FF3),
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                            Text(
+                                                                text = parsedTime,
+                                                                color = Color(0xFF2E6FF3),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Medium
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // 3. Alarm Symbol for Reminder
+                                                    if (parsedReminders.isNotEmpty()) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.NotificationsActive,
+                                                                contentDescription = "Reminder Set",
+                                                                tint = Color(0xFFFFB300),
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                            Text(
+                                                                text = "Alarm (${parsedReminders.size})",
+                                                                color = Color(0xFFFFB300),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             }
                                             
                                             val combinedText = task.title + " " + task.description
@@ -985,15 +1082,7 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                         }
                                     }
 
-                                    if (task.dueDateString.isNotEmpty() && !selectedList.equals("Today", ignoreCase = true)) {
-                                        val isOverdue = task.dueDateString < todayStr && !task.isCompleted
-                                        Text(
-                                            text = formatDueDate(task.dueDateString),
-                                            color = if (isOverdue) Color(0xFFF9325D) else Color(0xFF7B7B7F),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
+
                                 }
                             }
                         }
@@ -1969,13 +2058,109 @@ fun KanbanColumn(
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
-                            if (task.description.isNotEmpty()) {
+                            val cleanDesc = remember(task.description) {
+                                task.description
+                                    .replace(Regex("""\[Time: [^\]]+\]"""), "")
+                                    .replace(Regex("""\[Reminders: [^\]]+\]"""), "")
+                                    .replace(Regex("""\[Repeat: [^\]]+\]"""), "")
+                                    .replace(Regex("""\[Duration: [^\]]+\]"""), "")
+                                    .replace(Regex("""\[Attachment: [^\]]+\]"""), "")
+                                    .replace(Regex("""\[Location: [^\]]+\]"""), "")
+                                    .replace(Regex("""\[WontDo\]"""), "")
+                                    .trim()
+                            }
+
+                            if (cleanDesc.isNotEmpty()) {
                                 Text(
-                                    text = task.description,
+                                    text = cleanDesc,
                                     fontSize = 11.sp,
                                     color = Color.Gray,
                                     modifier = Modifier.padding(start = 32.dp, top = 2.dp)
                                 )
+                            }
+
+                            // Metadata Row: Due Date, Start Time, and Reminder Alarms
+                            val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+                            val parsedTime = remember(task.description) {
+                                val match = Regex("""\[Time: ([^\]]+)\]""").find(task.description)
+                                match?.groupValues?.get(1)?.trim()
+                            }
+                            val parsedReminders = remember(task.description) {
+                                val match = Regex("""\[Reminders: ([^\]]+)\]""").find(task.description)
+                                val listStr = match?.groupValues?.get(1) ?: "None"
+                                if (listStr == "None") emptyList() else listStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            }
+
+                            if (task.dueDateString.isNotEmpty() || !parsedTime.isNullOrEmpty() || parsedReminders.isNotEmpty()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(start = 32.dp, top = 4.dp)
+                                ) {
+                                    // 1. Due Date
+                                    if (task.dueDateString.isNotEmpty()) {
+                                        val isOverdue = task.dueDateString < todayStr && !task.isCompleted
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Event,
+                                                contentDescription = "Due Date",
+                                                tint = if (isOverdue) Color(0xFFF9325D) else Color(0xFF7B7B7F),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = formatDueDate(task.dueDateString),
+                                                color = if (isOverdue) Color(0xFFF9325D) else Color(0xFF7B7B7F),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+
+                                    // 2. Start Time
+                                    if (!parsedTime.isNullOrEmpty()) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AccessTime,
+                                                contentDescription = "Start Time",
+                                                tint = Color(0xFF2E6FF3),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = parsedTime,
+                                                color = Color(0xFF2E6FF3),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+
+                                    // 3. Alarm Symbol for Reminder
+                                    if (parsedReminders.isNotEmpty()) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.NotificationsActive,
+                                                contentDescription = "Reminder Set",
+                                                tint = Color(0xFFFFB300),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = "Alarm (${parsedReminders.size})",
+                                                color = Color(0xFFFFB300),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         
                         val combinedText = task.title + " " + task.description

@@ -32,6 +32,9 @@ fun SettingsTasksPage(
         val taskMediumDisplay by viewModel.taskMediumDisplayEnabled.collectAsState()
         val taskLowNotif by viewModel.taskLowNotifEnabled.collectAsState()
         val taskLowDisplay by viewModel.taskLowDisplayEnabled.collectAsState()
+        val taskHighAlarmSound by viewModel.taskHighAlarmSoundEnabled.collectAsState()
+        val taskMediumAlarmSound by viewModel.taskMediumAlarmSoundEnabled.collectAsState()
+        val taskLowAlarmSound by viewModel.taskLowAlarmSoundEnabled.collectAsState()
         val additionalReminderTimes by viewModel.additionalReminderTimes.collectAsState()
 
         // Tasks Subpage
@@ -127,14 +130,22 @@ fun SettingsTasksPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("High Priority Settings", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = taskHighNotif, onCheckedChange = { viewModel.updateTaskHighNotifEnabled(it) })
                                     Text("Notifications", color = Color.Gray, fontSize = 10.sp)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = taskHighDisplay, onCheckedChange = { viewModel.updateTaskHighDisplayEnabled(it) })
-                                    Text("On-Screen Display", color = Color.Gray, fontSize = 10.sp)
+                                    Text("On-Screen", color = Color.Gray, fontSize = 10.sp)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = taskHighAlarmSound, onCheckedChange = { viewModel.updateTaskHighAlarmSoundEnabled(it) })
+                                    Text("Alarm Sound", color = Color.Gray, fontSize = 10.sp)
                                 }
                             }
                         }
@@ -150,14 +161,22 @@ fun SettingsTasksPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Medium Priority Settings", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = taskMediumNotif, onCheckedChange = { viewModel.updateTaskMediumNotifEnabled(it) })
                                     Text("Notifications", color = Color.Gray, fontSize = 10.sp)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = taskMediumDisplay, onCheckedChange = { viewModel.updateTaskMediumDisplayEnabled(it) })
-                                    Text("On-Screen Display", color = Color.Gray, fontSize = 10.sp)
+                                    Text("On-Screen", color = Color.Gray, fontSize = 10.sp)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = taskMediumAlarmSound, onCheckedChange = { viewModel.updateTaskMediumAlarmSoundEnabled(it) })
+                                    Text("Alarm Sound", color = Color.Gray, fontSize = 10.sp)
                                 }
                             }
                         }
@@ -173,14 +192,22 @@ fun SettingsTasksPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("No / Low Priority Settings", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = taskLowNotif, onCheckedChange = { viewModel.updateTaskLowNotifEnabled(it) })
                                     Text("Notifications", color = Color.Gray, fontSize = 10.sp)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(checked = taskLowDisplay, onCheckedChange = { viewModel.updateTaskLowDisplayEnabled(it) })
-                                    Text("On-Screen Display", color = Color.Gray, fontSize = 10.sp)
+                                    Text("On-Screen", color = Color.Gray, fontSize = 10.sp)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = taskLowAlarmSound, onCheckedChange = { viewModel.updateTaskLowAlarmSoundEnabled(it) })
+                                    Text("Alarm Sound", color = Color.Gray, fontSize = 10.sp)
                                 }
                             }
                         }

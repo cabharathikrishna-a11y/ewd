@@ -436,20 +436,31 @@ class KeepAliveService : Service() {
                     // --- 2. SCREEN LIMITS & APP BLOCKS MONITORING ---
                     if (!intercepted) {
                         val monitoredApps = com.example.util.AppBlockHelper.getBlockedApps(applicationContext)
-                        if (monitoredApps.contains(foregroundPackage)) {
+                        
+                        // Check if the foreground app is a user-launchable app on the device
+                        val isLaunchableApp = try {
+                            foregroundPackage != applicationContext.packageName && 
+                            applicationContext.packageManager.getLaunchIntentForPackage(foregroundPackage) != null
+                        } catch (e: Exception) {
+                            false
+                        }
+
+                        if (isLaunchableApp) {
                             com.example.util.AppBlockHelper.checkAndResetDailyUsageIfNeeded(applicationContext)
                             
+                            // 1. Increment active usage counter by actual elapsed seconds (e.g. 1s or 5s)
+                            val incrementSecs = (actualElapsedMs / 1000).toInt()
+                            if (incrementSecs > 0) {
+                                com.example.util.AppBlockHelper.incrementDailyUsageSeconds(applicationContext, foregroundPackage, incrementSecs)
+                            }
+                        }
+
+                        if (monitoredApps.contains(foregroundPackage)) {
                             val blockedApps = strictPrefs.getStringSet("blocked_packages", emptySet()) ?: emptySet()
                             val isAppInAllowList = !blockedApps.contains(foregroundPackage)
                             val areLimitsActive = !isTimerActive || !strictEnabled || isAppInAllowList
 
                             if (areLimitsActive) {
-                                // 1. Increment active usage counter by actual elapsed seconds (e.g. 1s or 5s)
-                                val incrementSecs = (actualElapsedMs / 1000).toInt()
-                                if (incrementSecs > 0) {
-                                    com.example.util.AppBlockHelper.incrementDailyUsageSeconds(applicationContext, foregroundPackage, incrementSecs)
-                                }
-                                
                                 // 2. Check if daily limit is exceeded
                                 val isLimitOver = com.example.util.AppBlockHelper.isDailyLimitExceeded(applicationContext, foregroundPackage)
                                 if (isLimitOver) {

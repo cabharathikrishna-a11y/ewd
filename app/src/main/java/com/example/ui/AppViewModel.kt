@@ -272,6 +272,16 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     private val _taskLowDisplayEnabled = MutableStateFlow(true)
     val taskLowDisplayEnabled: StateFlow<Boolean> = _taskLowDisplayEnabled.asStateFlow()
 
+    // Task Priority Alarm Sound Settings
+    private val _taskHighAlarmSoundEnabled = MutableStateFlow(false)
+    val taskHighAlarmSoundEnabled: StateFlow<Boolean> = _taskHighAlarmSoundEnabled.asStateFlow()
+
+    private val _taskMediumAlarmSoundEnabled = MutableStateFlow(false)
+    val taskMediumAlarmSoundEnabled: StateFlow<Boolean> = _taskMediumAlarmSoundEnabled.asStateFlow()
+
+    private val _taskLowAlarmSoundEnabled = MutableStateFlow(false)
+    val taskLowAlarmSoundEnabled: StateFlow<Boolean> = _taskLowAlarmSoundEnabled.asStateFlow()
+
     // All-day Notification Settings
     private val _allDayNotificationEnabled = MutableStateFlow(false)
     val allDayNotificationEnabled: StateFlow<Boolean> = _allDayNotificationEnabled.asStateFlow()
@@ -397,6 +407,21 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     fun updateTaskLowDisplayEnabled(enabled: Boolean) {
         _taskLowDisplayEnabled.value = enabled
         prefs.edit().putBoolean("task_low_display", enabled).apply()
+    }
+
+    fun updateTaskHighAlarmSoundEnabled(enabled: Boolean) {
+        _taskHighAlarmSoundEnabled.value = enabled
+        prefs.edit().putBoolean("task_high_alarm_sound", enabled).apply()
+    }
+
+    fun updateTaskMediumAlarmSoundEnabled(enabled: Boolean) {
+        _taskMediumAlarmSoundEnabled.value = enabled
+        prefs.edit().putBoolean("task_medium_alarm_sound", enabled).apply()
+    }
+
+    fun updateTaskLowAlarmSoundEnabled(enabled: Boolean) {
+        _taskLowAlarmSoundEnabled.value = enabled
+        prefs.edit().putBoolean("task_low_alarm_sound", enabled).apply()
     }
 
     // --- AI Memories Long Term Store ---
@@ -1228,6 +1253,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         _taskMediumDisplayEnabled.value = prefs.getBoolean("task_medium_display", true)
         _taskLowNotifEnabled.value = prefs.getBoolean("task_low_notif", true)
         _taskLowDisplayEnabled.value = prefs.getBoolean("task_low_display", true)
+        _taskHighAlarmSoundEnabled.value = prefs.getBoolean("task_high_alarm_sound", false)
+        _taskMediumAlarmSoundEnabled.value = prefs.getBoolean("task_medium_alarm_sound", false)
+        _taskLowAlarmSoundEnabled.value = prefs.getBoolean("task_low_alarm_sound", false)
 
         _allDayNotificationEnabled.value = prefs.getBoolean("all_day_notification_enabled", false)
         _allDayNotificationTime.value = prefs.getString("all_day_notification_time", "09:00 AM") ?: "09:00 AM"

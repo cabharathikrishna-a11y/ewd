@@ -385,4 +385,30 @@ object AppBlockHelper {
             }
         }
     }
+
+    data class AppInfo(val packageName: String, val label: String)
+
+    /**
+     * Dynamically queries all user-launchable apps installed on the device.
+     * This ensures any newly installed apps are instantly captured.
+     */
+    fun getInstalledApps(context: Context): List<AppInfo> {
+        val pm = context.packageManager
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+        val appList = mutableListOf<AppInfo>()
+        val uniquePackages = mutableSetOf<String>()
+        
+        for (ri in resolveInfos) {
+            val pkgName = ri.activityInfo.packageName
+            if (pkgName == context.packageName) continue
+            if (uniquePackages.add(pkgName)) {
+                val label = ri.loadLabel(pm).toString()
+                appList.add(AppInfo(packageName = pkgName, label = label))
+            }
+        }
+        return appList.sortedBy { it.label.lowercase() }
+    }
 }
