@@ -23,8 +23,8 @@ android {
     val customCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull()
     val customName = project.findProperty("customVersionName")?.toString()
 
-    versionCode = customCode ?: 16
-    versionName = customName ?: "16.0"
+    versionCode = customCode ?: 19
+    versionName = customName ?: "19.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

@@ -2,10 +2,26 @@ package com.example.ui.components
 
 import android.content.Context
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -18,10 +34,13 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +72,7 @@ fun TimerImmersiveContent(
     val wasStartedFromStopwatch by viewModel.wasStartedFromStopwatch.collectAsStateWithLifecycle()
     val cumulativeSessionFocusSeconds by viewModel.cumulativeSessionFocusSeconds.collectAsStateWithLifecycle()
     val selectedTask by viewModel.attachedTask.collectAsStateWithLifecycle()
+    val timerDisplayMode by viewModel.timerDisplayMode.collectAsStateWithLifecycle()
 
     val motivationalQuoteEnabled by viewModel.focusMotivationalQuoteEnabled.collectAsStateWithLifecycle()
     val quoteIntervalMins by viewModel.focusMotivationalQuoteIntervalMins.collectAsStateWithLifecycle()
@@ -158,7 +178,26 @@ fun TimerImmersiveContent(
 
         // Exactly Centered Timer Display
         Column(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    var dragSum = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragSum = 0f },
+                        onDragEnd = {
+                            if (kotlin.math.abs(dragSum) > 35f) {
+                                val currentMode = viewModel.timerDisplayMode.value
+                                val nextMode = if (currentMode == "digital") "flip" else "digital"
+                                viewModel.setTimerDisplayMode(nextMode)
+                            }
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            dragSum += dragAmount
+                        }
+                    )
+                },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -176,35 +215,94 @@ fun TimerImmersiveContent(
                 )
             }
 
-            if (!isFocusPhase) {
-                RenderDigitalDigits(
-                    viewModel = viewModel,
-                    seconds = timerSecondsRemaining,
-                    isImmersive = true,
-                    isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                    isBlinking = true,
-                    isVerticalPhone = isVerticalPhone
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("now u r in a break", color = Color(0xFF81C784), fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+            val currentSeconds = if (!isFocusPhase) {
+                timerSecondsRemaining
             } else if (isTabFocusTimerSelected) {
-                RenderDigitalDigits(
-                    viewModel = viewModel,
-                    seconds = timerSecondsRemaining,
-                    isImmersive = true,
-                    isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                    isBlinking = !isFocusPhase,
-                    isVerticalPhone = isVerticalPhone
-                )
+                timerSecondsRemaining
             } else {
-                RenderDigitalDigits(
+                stopwatchSeconds
+            }
+
+            val isBlinking = !isFocusPhase || (isTabFocusTimerSelected && !isFocusPhase)
+
+            if (timerDisplayMode == "flip") {
+                RenderFlipDigits(
                     viewModel = viewModel,
-                    seconds = stopwatchSeconds,
+                    seconds = currentSeconds,
                     isImmersive = true,
                     isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
-                    isBlinking = false,
+                    isBlinking = isBlinking,
                     isVerticalPhone = isVerticalPhone
                 )
+                if (!isFocusPhase) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("now u r in a break", color = Color(0xFF81C784), fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                }
+            } else {
+                if (!isFocusPhase) {
+                    RenderDigitalDigits(
+                        viewModel = viewModel,
+                        seconds = timerSecondsRemaining,
+                        isImmersive = true,
+                        isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                        isBlinking = true,
+                        isVerticalPhone = isVerticalPhone
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("now u r in a break", color = Color(0xFF81C784), fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                } else if (isTabFocusTimerSelected) {
+                    RenderDigitalDigits(
+                        viewModel = viewModel,
+                        seconds = timerSecondsRemaining,
+                        isImmersive = true,
+                        isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                        isBlinking = !isFocusPhase,
+                        isVerticalPhone = isVerticalPhone
+                    )
+                } else {
+                    RenderDigitalDigits(
+                        viewModel = viewModel,
+                        seconds = stopwatchSeconds,
+                        isImmersive = true,
+                        isAntiBurnCenteredByTap = isAntiBurnCenteredByTap,
+                        isBlinking = false,
+                        isVerticalPhone = isVerticalPhone
+                    )
+                }
+            }
+
+            // Swipe instruction indicator
+            if (areControlsVisible) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.alpha(0.6f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                color = if (timerDisplayMode == "digital") Color.White else Color.Gray,
+                                shape = CircleShape
+                            )
+                    )
+                    Text(
+                        text = "SWIPE TO SWITCH MODE",
+                        color = Color.Gray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                color = if (timerDisplayMode == "flip") Color.White else Color.Gray,
+                                shape = CircleShape
+                            )
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -404,3 +502,179 @@ fun TimerImmersiveContent(
         }
     }
 }
+
+@Composable
+fun RenderFlipDigits(
+    viewModel: AppViewModel,
+    seconds: Int,
+    isImmersive: Boolean,
+    isAntiBurnCenteredByTap: Boolean,
+    isBlinking: Boolean = false,
+    isVerticalPhone: Boolean = false
+) {
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    val s = seconds % 60
+
+    val antiBurnScreenEnabled by viewModel.antiBurnScreenEnabled.collectAsStateWithLifecycle()
+    val minutesElapsedTotal = (System.currentTimeMillis() / 60000).toInt()
+    val periodIndex = (minutesElapsedTotal / 5) % 4
+
+    val antiBurnOffset = if (antiBurnScreenEnabled && isImmersive && !isAntiBurnCenteredByTap) {
+        when (periodIndex) {
+            0 -> Modifier.offset(x = (-40).dp, y = (-30).dp)
+            1 -> Modifier.offset(x = (40).dp, y = (30).dp)
+            2 -> Modifier.offset(x = (30).dp, y = (-40).dp)
+            else -> Modifier.offset(x = (-30).dp, y = (40).dp)
+        }
+    } else {
+        Modifier
+    }
+
+    val blinkAlpha = if (isBlinking) {
+        val infiniteTransition = rememberInfiniteTransition(label = "flip_blink")
+        val alpha by infiniteTransition.animateFloat(
+            initialValue = 0.2f,
+            targetValue = 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "flip_blinkAlpha"
+        )
+        alpha
+    } else {
+        1.0f
+    }
+
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+
+    val cardSize = if (isPortrait) {
+        if (h > 0) 130.dp else 180.dp
+    } else {
+        if (h > 0) 95.dp else 125.dp
+    }
+
+    val fontSize = if (isPortrait) {
+        if (h > 0) 75.sp else 115.sp
+    } else {
+        if (h > 0) 50.sp else 75.sp
+    }
+
+    Box(
+        modifier = antiBurnOffset
+            .alpha(blinkAlpha)
+            .testTag("timer_flip_display")
+            .fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isPortrait) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (h > 0) {
+                    FlipCard(valueString = String.format(java.util.Locale.US, "%02d", h), cardSize = cardSize, fontSize = fontSize)
+                }
+                FlipCard(valueString = String.format(java.util.Locale.US, "%02d", m), cardSize = cardSize, fontSize = fontSize)
+                FlipCard(valueString = String.format(java.util.Locale.US, "%02d", s), cardSize = cardSize, fontSize = fontSize)
+            }
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (h > 0) {
+                    FlipCard(valueString = String.format(java.util.Locale.US, "%02d", h), cardSize = cardSize, fontSize = fontSize)
+                }
+                FlipCard(valueString = String.format(java.util.Locale.US, "%02d", m), cardSize = cardSize, fontSize = fontSize)
+                FlipCard(valueString = String.format(java.util.Locale.US, "%02d", s), cardSize = cardSize, fontSize = fontSize)
+            }
+        }
+    }
+}
+
+@Composable
+fun FlipCard(
+    valueString: String,
+    cardSize: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier
+) {
+    androidx.compose.animation.AnimatedContent(
+        targetState = valueString,
+        transitionSpec = {
+            (androidx.compose.animation.slideInVertically { height -> -height } + androidx.compose.animation.fadeIn(animationSpec = tween(150)))
+                .togetherWith(androidx.compose.animation.slideOutVertically { height -> height } + androidx.compose.animation.fadeOut(animationSpec = tween(150)))
+        },
+        label = "flip_card_anim"
+    ) { animatedValue ->
+        Box(
+            modifier = modifier
+                .size(cardSize)
+                .background(Color.Black, shape = RoundedCornerShape(20.dp))
+                .border(BorderStroke(1.dp, Color(0xFF2E2E31)), shape = RoundedCornerShape(20.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(
+                            color = Color(0xFF202022),
+                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+                        )
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.5.dp)
+                        .background(Color(0xFF0C0C0D))
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(
+                            color = Color(0xFF151517),
+                            shape = RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp)
+                        )
+                )
+            }
+            
+            Box(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .offset(x = (-4).dp)
+                        .size(width = 8.dp, height = 12.dp)
+                        .background(Color.Black, shape = RoundedCornerShape(4.dp))
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(x = 4.dp)
+                        .size(width = 8.dp, height = 12.dp)
+                        .background(Color.Black, shape = RoundedCornerShape(4.dp))
+                )
+            }
+
+            Text(
+                text = animatedValue,
+                color = Color(0xFFECECEC),
+                fontSize = fontSize,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = (-2).sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+    }
+}
+
+

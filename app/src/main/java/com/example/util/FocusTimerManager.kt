@@ -708,12 +708,28 @@ object FocusTimerManager {
         saveActiveSessionState(context)
     }
 
+    private fun android.content.SharedPreferences.getSafeLong(key: String, defValue: Long): Long {
+        return try {
+            this.getLong(key, defValue)
+        } catch (e: Exception) {
+            try {
+                this.getInt(key, defValue.toInt()).toLong()
+            } catch (e2: Exception) {
+                try {
+                    this.getString(key, null)?.toLongOrNull() ?: defValue
+                } catch (e3: Exception) {
+                    defValue
+                }
+            }
+        }
+    }
+
     fun restoreStateFromDisk(context: Context) {
         val prefs = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         _isTimerRunning.value = prefs.getBoolean("timer_is_running", false)
         _isStopwatchActive.value = prefs.getBoolean("timer_is_stopwatch_active", false)
-        lastResumeElapsedRealtime = prefs.getLong("last_resume_time_ms", -1L).let { if (it == -1L) null else it }
-        _accumulatedSessionTimeMs.value = prefs.getLong("accumulated_time_ms", 0L)
+        lastResumeElapsedRealtime = prefs.getSafeLong("last_resume_time_ms", -1L).let { if (it == -1L) null else it }
+        _accumulatedSessionTimeMs.value = prefs.getSafeLong("accumulated_time_ms", 0L)
         _isFocusPhase.value = prefs.getBoolean("timer_is_focus_phase", true)
     }
 
@@ -728,10 +744,10 @@ object FocusTimerManager {
         val savedAttachedTaskId = prefs.getInt("timer_attached_task_id", -1)
         _attachedTag.value = prefs.getString("timer_attached_tag", "") ?: ""
         
-        val savedAccumulated = prefs.getLong("accumulated_time_ms", 0L)
-        val savedLastResume = prefs.getLong("last_resume_time_ms", -1L)
-        val savedSessionStart = prefs.getLong("timer_session_start_ms", -1L)
-        val savedLastActiveTimestamp = prefs.getLong("timer_last_active_timestamp", -1L)
+        val savedAccumulated = prefs.getSafeLong("accumulated_time_ms", 0L)
+        val savedLastResume = prefs.getSafeLong("last_resume_time_ms", -1L)
+        val savedSessionStart = prefs.getSafeLong("timer_session_start_ms", -1L)
+        val savedLastActiveTimestamp = prefs.getSafeLong("timer_last_active_timestamp", -1L)
         
         _accumulatedSessionTimeMs.value = savedAccumulated
         setLastResumeTimeMs(if (savedLastResume != -1L) savedLastResume else null)

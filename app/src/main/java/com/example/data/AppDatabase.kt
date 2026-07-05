@@ -579,7 +579,7 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         KeepNote::class,
         HealthRecord::class
     ],
-    version = 16,
+    version = 19,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

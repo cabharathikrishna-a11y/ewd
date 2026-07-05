@@ -852,6 +852,15 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         _isTimerImmersive.value = immersive
     }
 
+    // Fullscreen Timer Display Mode: "digital" or "flip"
+    private val _timerDisplayMode = MutableStateFlow(prefs.getString("timer_display_mode", "digital") ?: "digital")
+    val timerDisplayMode: StateFlow<String> = _timerDisplayMode.asStateFlow()
+
+    fun setTimerDisplayMode(mode: String) {
+        _timerDisplayMode.value = mode
+        prefs.edit().putString("timer_display_mode", mode).apply()
+    }
+
     // Shared Dialog states to prevent transition state loss on stop/end
     private val _showElapsedTimeDialog = MutableStateFlow(false)
     val showElapsedTimeDialog: StateFlow<Boolean> = _showElapsedTimeDialog.asStateFlow()
