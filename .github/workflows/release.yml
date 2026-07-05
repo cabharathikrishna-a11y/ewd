@@ -79,8 +79,9 @@ jobs:
         # 1. Try decoding from GitHub Secrets
         if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
           echo "Decoding DEBUG_KEYSTORE_BASE64 from GitHub Secrets..."
-          echo -n "$DEBUG_KEYSTORE_BASE64" | tr -d '\r\n[:space:]' > debug.keystore.base64
-          base64 --decode debug.keystore.base64 > debug.keystore 2>/dev/null || true
+          echo -n "$DEBUG_KEYSTORE_BASE64" | tr -d '\r\n[:space:]' > temp_secret_keystore.base64
+          base64 --decode temp_secret_keystore.base64 > debug.keystore 2>/dev/null || true
+          rm -f temp_secret_keystore.base64
           
           # Verify keystore
           if [ -f "debug.keystore" ] && [ -s "debug.keystore" ]; then
@@ -89,6 +90,7 @@ jobs:
               IS_VALID=true
             else
               echo "WARNING: debug.keystore decoded from GitHub Secrets is invalid or corrupted."
+              rm -f debug.keystore
             fi
           fi
         else
