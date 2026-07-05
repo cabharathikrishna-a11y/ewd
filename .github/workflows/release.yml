@@ -115,29 +115,12 @@ jobs:
           fi
         fi
 
-        # 3. Generate a brand new keystore as a last-resort failsafe
+        # 3. If still invalid, fail the build to prevent signing with a different key!
         if [ "$IS_VALID" = "false" ]; then
-          echo "CRITICAL: No valid keystore could be decoded. Generating a brand new, valid debug.keystore on-the-fly..."
-          rm -f debug.keystore
-          keytool -genkey -v \
-            -keystore debug.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -storetype PKCS12
-          
-          # Final validation
-          if keytool -list -keystore debug.keystore -storepass android -alias androiddebugkey >/dev/null 2>&1; then
-            echo "SUCCESS: Fresh debug.keystore generated and verified successfully!"
-            IS_VALID=true
-          else
-            echo "ERROR: Failed to generate a valid debug.keystore!"
-            exit 1
-          fi
+          echo "CRITICAL ERROR: No valid debug.keystore could be retrieved from GitHub Secrets or fallback."
+          echo "To prevent generating an APK signed with a different key (which breaks app updates), we are failing this job."
+          echo "Please ensure you have configured the GitHub Secret: DEBUG_KEYSTORE_BASE64"
+          exit 1
         fi
 
         echo "Final Keystore diagnostics:"
