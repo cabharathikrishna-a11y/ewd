@@ -17,14 +17,14 @@ android {
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.lifeos.gxpqtr"
+    applicationId = "com.lifeos.com"
     minSdk = 24
     targetSdk = 36
     val customCode = project.findProperty("customVersionCode")?.toString()?.toIntOrNull()
     val customName = project.findProperty("customVersionName")?.toString()
 
-    versionCode = customCode ?: 7
-    versionName = customName ?: "7.0"
+    versionCode = customCode ?: 16
+    versionName = customName ?: "16.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

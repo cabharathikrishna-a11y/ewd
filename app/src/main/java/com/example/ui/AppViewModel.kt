@@ -6676,33 +6676,134 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     fun trackSleepFromDeviceUsage(context: android.content.Context) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-            val lastActive = prefs.getLong("last_device_active_timestamp", 0L)
-            if (lastActive <= 0L) return@launch
-
-            val now = System.currentTimeMillis()
             val todayStr = getCurrentDateString()
             val lastCalcDate = prefs.getString("last_calculated_sleep_date", "")
 
             if (lastCalcDate == todayStr) return@launch
 
-            val diffMs = now - lastActive
-            val diffMinutes = (diffMs / (1000 * 60)).toInt()
+            var diffMinutes = 0
+            var sleepStart = 0L
+            var sleepEnd = 0L
+            var calculationMethod = ""
 
+            val usm = context.getSystemService(android.content.Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+            val hasPermission = com.example.util.AppBlockHelper.hasUsageStatsPermission(context)
+
+            if (usm != null && hasPermission) {
+                try {
+                    val now = System.currentTimeMillis()
+                    // Query events for the last 24 hours
+                    val startTime = now - 24 * 60 * 60 * 1000L
+                    val usageEvents = usm.queryEvents(startTime, now)
+
+                    val timestamps = mutableListOf<Long>()
+                    val event = android.app.usage.UsageEvents.Event()
+                    while (usageEvents.hasNextEvent()) {
+                        usageEvents.getNextEvent(event)
+                        // Capture standard active user interaction events
+                        val isUserActive = event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED ||
+                                event.eventType == android.app.usage.UsageEvents.Event.USER_INTERACTION
+                        if (isUserActive) {
+                            timestamps.add(event.timeStamp)
+                        }
+                    }
+
+                    if (timestamps.size >= 2) {
+                        timestamps.sort()
+
+                        // Find the longest gap of inactivity which represents sleeping time
+                        var maxGapMs = 0L
+                        var bestStart = 0L
+                        var bestEnd = 0L
+
+                        for (i in 0 until timestamps.size - 1) {
+                            val gap = timestamps[i+1] - timestamps[i]
+                            if (gap > maxGapMs) {
+                                maxGapMs = gap
+                                bestStart = timestamps[i]
+                                bestEnd = timestamps[i+1]
+                            }
+                        }
+
+                        val gapMinutes = (maxGapMs / (1000 * 60)).toInt()
+                        // Sleep is typically between 2 hours (120 mins) and 15 hours (900 mins)
+                        if (gapMinutes in 120..900) {
+                            diffMinutes = gapMinutes
+                            sleepStart = bestStart
+                            sleepEnd = bestEnd
+                            calculationMethod = "device_usage_stats"
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("AppViewModel", "Error querying usage events: ${e.message}")
+                }
+            }
+
+            // Fallback: If usage stats tracking failed or wasn't available, calculate using configured device usage boundaries
+            if (calculationMethod.isEmpty()) {
+                if (com.example.util.SleepTimeHelper.isWakeUpAndSleepTimeSet(context)) {
+                    val wakeUp = com.example.util.SleepTimeHelper.getWakeUpTime(context)
+                    val sleep = com.example.util.SleepTimeHelper.getSleepTime(context)
+                    if (wakeUp != null && sleep != null) {
+                        try {
+                            val wakeParts = wakeUp.split(":")
+                            val sleepParts = sleep.split(":")
+                            if (wakeParts.size == 2 && sleepParts.size == 2) {
+                                val wakeHour = wakeParts[0].toIntOrNull() ?: 7
+                                val wakeMin = wakeParts[1].toIntOrNull() ?: 0
+                                val sleepHour = sleepParts[0].toIntOrNull() ?: 22
+                                val sleepMin = sleepParts[1].toIntOrNull() ?: 0
+
+                                val wakeMinutesTotal = wakeHour * 60 + wakeMin
+                                val sleepMinutesTotal = sleepHour * 60 + sleepMin
+
+                                val duration = if (wakeMinutesTotal < sleepMinutesTotal) {
+                                    (24 * 60) - sleepMinutesTotal + wakeMinutesTotal
+                                } else {
+                                    wakeMinutesTotal - sleepMinutesTotal
+                                }
+
+                                if (duration in 120..900) {
+                                    diffMinutes = duration
+                                    calculationMethod = "configured_usage_boundaries"
+                                }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("AppViewModel", "Error parsing configured sleep boundaries: ${e.message}")
+                        }
+                    }
+                }
+            }
+
+            // If we successfully determined a sleep duration via either method, record it
             if (diffMinutes in 120..900) {
                 updateHealthMetric(sleepMinutes = diffMinutes)
-                
-                prefs.edit()
+
+                val editor = prefs.edit()
                     .putString("last_calculated_sleep_date", todayStr)
-                    .putLong("calculated_sleep_start_timestamp", lastActive)
-                    .putLong("calculated_sleep_end_timestamp", now)
-                    .apply()
+                    .putString("sleep_calculation_method", calculationMethod)
                 
+                if (sleepStart > 0L && sleepEnd > 0L) {
+                    editor.putLong("calculated_sleep_start_timestamp", sleepStart)
+                    editor.putLong("calculated_sleep_end_timestamp", sleepEnd)
+                }
+                editor.apply()
+
+                val toastMsg = when (calculationMethod) {
+                    "device_usage_stats" -> {
+                        val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                        val startTimeStr = sdf.format(java.util.Date(sleepStart))
+                        val endTimeStr = sdf.format(java.util.Date(sleepEnd))
+                        "Auto-detected sleep: ${diffMinutes / 60}h ${diffMinutes % 60}m based on device usage inactivity ($startTimeStr to $endTimeStr)!"
+                    }
+                    "configured_usage_boundaries" -> {
+                        "Auto-detected sleep: ${diffMinutes / 60}h ${diffMinutes % 60}m based on configured device usage start/end times!"
+                    }
+                    else -> "Auto-detected sleep: ${diffMinutes / 60}h ${diffMinutes % 60}m!"
+                }
+
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        context,
-                        "Auto-detected sleep: ${diffMinutes / 60}h ${diffMinutes % 60}m based on device usage!",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
+                    android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }

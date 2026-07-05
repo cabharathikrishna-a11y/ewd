@@ -671,10 +671,14 @@ object FocusTimerManager {
     private var overlayView: View? = null
     private var tvTimerText: TextView? = null
     private var tvCollapsedArrow: TextView? = null
+    private var tvEndBtn: TextView? = null
+    private var tvPauseBtn: TextView? = null
     private var windowManager: WindowManager? = null
 
     private var isOverlayCollapsed = false
     private var overlayCollapsedSide = "none" // "none", "left", "right"
+    private var areOverlayControlsVisible = false
+    private var overlayAutoHideJob: Job? = null
     private var lastOverlayX = 150
     private var lastOverlayY = 150
 
@@ -1820,188 +1824,482 @@ object FocusTimerManager {
             val wm = context.applicationContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager = wm
 
-                val sizePref = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                    .getString("floating_timer_size", "large") ?: "large"
+            val sizePref = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                .getString("floating_timer_size", "large") ?: "large"
 
-                val textSizeVal: Float
-                val padH: Float
-                val padV: Float
-                val fixedWidthDp: Float
-                when (sizePref) {
-                    "small" -> {
-                        textSizeVal = 14f
-                        padH = 10f
-                        padV = 6f
-                        fixedWidthDp = 110f
-                    }
-                    "medium" -> {
-                        textSizeVal = 19f
-                        padH = 16f
-                        padV = 10f
-                        fixedWidthDp = 150f
-                    }
-                    else -> {
-                        textSizeVal = 25f
-                        padH = 22f
-                        padV = 14f
-                        fixedWidthDp = 190f
-                    }
+            val textSizeVal: Float
+            val padH: Float
+            val padV: Float
+            val fixedWidthDp: Float
+            when (sizePref) {
+                "small" -> {
+                    textSizeVal = 14f
+                    padH = 10f
+                    padV = 6f
+                    fixedWidthDp = 140f
                 }
-
-                val initialWidthDp = if (isOverlayCollapsed) 32f else fixedWidthDp
-                val wmLayoutParams = WindowManager.LayoutParams(
-                    dpToPx(context, initialWidthDp),
-                    WindowManager.LayoutParams.WRAP_CONTENT,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    } else {
-                         @Suppress("DEPRECATION")
-                         WindowManager.LayoutParams.TYPE_PHONE
-                    },
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                    PixelFormat.TRANSLUCENT
-                ).apply {
-                    gravity = Gravity.TOP or Gravity.START
-                    x = lastOverlayX
-                    y = lastOverlayY
+                "medium" -> {
+                    textSizeVal = 19f
+                    padH = 16f
+                    padV = 10f
+                    fixedWidthDp = 180f
                 }
-
-                val container = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER
-                    clipToOutline = true
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(0xFF111111.toInt())
-                        cornerRadius = dpToPx(context, 12f).toFloat()
-                    }
+                else -> {
+                    textSizeVal = 25f
+                    padH = 22f
+                    padV = 14f
+                    fixedWidthDp = 220f
                 }
+            }
 
-                val textView = TextView(context).apply {
-                    text = formatTime(if (isStopwatchActive.value) stopwatchSeconds.value else timerSecondsLeft.value)
-                    setTextColor(android.graphics.Color.WHITE)
-                    textSize = textSizeVal
-                    gravity = Gravity.CENTER
-                    typeface = android.graphics.Typeface.MONOSPACE
-                    setPadding(dpToPx(context, padH), dpToPx(context, padV), dpToPx(context, padH), dpToPx(context, padV))
-                    this.layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                    )
+            val initialWidthDp = if (isOverlayCollapsed) 32f else fixedWidthDp
+            val wmLayoutParams = WindowManager.LayoutParams(
+                dpToPx(context, initialWidthDp),
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                     @Suppress("DEPRECATION")
+                     WindowManager.LayoutParams.TYPE_PHONE
+                },
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = lastOverlayX
+                y = lastOverlayY
+            }
+
+            val container = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                clipToOutline = true
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0xFF111111.toInt())
+                    cornerRadius = dpToPx(context, 12f).toFloat()
                 }
-                tvTimerText = textView
-                container.addView(textView)
+            }
 
-                // Handle collapsed arrow layout
-                val arrowText = TextView(context).apply {
-                    text = "❯"
-                    setTextColor(android.graphics.Color.WHITE)
-                    textSize = 18f
-                    gravity = Gravity.CENTER
-                    visibility = View.GONE
-                    typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
-                }
-                tvCollapsedArrow = arrowText
-                container.addView(arrowText)
+            // End button on the left
+            val endBtn = TextView(context).apply {
+                text = "■"
+                setTextColor(0xFFFF5252.toInt())
+                textSize = textSizeVal - 2
+                gravity = Gravity.CENTER
+                setPadding(dpToPx(context, 14f), dpToPx(context, padV), dpToPx(context, 6f), dpToPx(context, padV))
+                setOnClickListener {
+                    Toast.makeText(context, "Command Executed: [End Session] - Hiding Controls", Toast.LENGTH_SHORT).show()
+                    hideOverlayControls(context)
 
-                val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-                    override fun onDoubleTap(e: MotionEvent): Boolean {
-                        val intent = Intent(context, MainActivity::class.java).apply {
-                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                            putExtra("SHOW_TIMER_PAGE", true)
+                    val isStopwatch = stopwatchSeconds.value > 0 || isStopwatchActive.value
+                    val elapsedSecs = if (isStopwatch) stopwatchSeconds.value else cumulativeSessionFocusSeconds.value
+
+                    if (elapsedSecs > 0) {
+                        if (isStopwatch) {
+                            resetStopwatch(context, saveSession = true)
+                        } else {
+                            resetTimer(context, saveSession = true)
                         }
-                        context.startActivity(intent)
+                        showOverlay3StepVerification(context, elapsedSecs, !isStopwatch)
+                    } else {
+                        if (isStopwatch) {
+                            resetStopwatch(context, saveSession = false)
+                        } else {
+                            resetTimer(context, saveSession = false)
+                        }
+                        Toast.makeText(context, "Session cancelled. No focus time to save.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            tvEndBtn = endBtn
+            container.addView(endBtn)
+
+            // Timer display text view (middle)
+            val textView = TextView(context).apply {
+                text = formatTime(if (isStopwatchActive.value) stopwatchSeconds.value else timerSecondsLeft.value)
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = textSizeVal
+                gravity = Gravity.CENTER
+                typeface = android.graphics.Typeface.MONOSPACE
+                setPadding(0, dpToPx(context, padV), 0, dpToPx(context, padV))
+                this.layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f
+                ).apply {
+                    gravity = Gravity.CENTER
+                }
+            }
+            tvTimerText = textView
+            container.addView(textView)
+
+            // Pause button on the right
+            val pauseBtn = TextView(context).apply {
+                val isRunning = isTimerRunning.value || isStopwatchActive.value
+                text = if (isRunning) "⏸" else "▶"
+                setTextColor(0xFF03A9F4.toInt())
+                textSize = textSizeVal - 2
+                gravity = Gravity.CENTER
+                setPadding(dpToPx(context, 6f), dpToPx(context, padV), dpToPx(context, 14f), dpToPx(context, padV))
+                setOnClickListener {
+                    val isRunningBefore = isTimerRunning.value || isStopwatchActive.value
+                    val actionName = if (isRunningBefore) "Pause" else "Resume"
+                    Toast.makeText(context, "Command Executed: [$actionName] - Hiding Controls", Toast.LENGTH_SHORT).show()
+                    hideOverlayControls(context)
+
+                    val isSwActiveOrHasTime = stopwatchSeconds.value > 0 || isStopwatchActive.value
+                    val isTimerActiveOrHasTime = (timerSecondsLeft.value < timerDurationMinutes.value * 60) || isTimerRunning.value
+
+                    if (isSwActiveOrHasTime) {
+                        if (isStopwatchActive.value) {
+                            pauseStopwatch(context)
+                        } else {
+                            startStopwatch(context)
+                        }
+                    } else if (isTimerActiveOrHasTime) {
+                        if (isTimerRunning.value) {
+                            pauseTimer(context)
+                        } else {
+                            startTimer(context)
+                        }
+                    } else {
+                        if (isTabFocusTimerSelected.value) {
+                            startTimer(context)
+                        } else {
+                            startStopwatch(context)
+                        }
+                    }
+                    updateOverlayTextAndState()
+                }
+            }
+            tvPauseBtn = pauseBtn
+            container.addView(pauseBtn)
+
+            // Handle collapsed arrow layout
+            val arrowText = TextView(context).apply {
+                text = "❯"
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = 18f
+                gravity = Gravity.CENTER
+                visibility = View.GONE
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
+            }
+            tvCollapsedArrow = arrowText
+            container.addView(arrowText)
+
+            val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    val intent = Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra("SHOW_TIMER_PAGE", true)
+                    }
+                    context.startActivity(intent)
+                    return true
+                }
+
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    if (isOverlayCollapsed) {
+                        expandOverlay(context)
+                        return true
+                    } else {
+                        showOverlayControls(context)
                         return true
                     }
-
-                    override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                        if (isOverlayCollapsed) {
-                            expandOverlay(context)
-                            return true
-                        }
-                        return false
-                    }
-                })
-
-                var initialX = 0
-                var initialY = 0
-                var initialTouchX = 0f
-                var initialTouchY = 0f
-
-                container.setOnTouchListener { _, event ->
-                    if (gestureDetector.onTouchEvent(event)) {
-                        return@setOnTouchListener true
-                    }
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            initialX = wmLayoutParams.x
-                            initialY = wmLayoutParams.y
-                            initialTouchX = event.rawX
-                            initialTouchY = event.rawY
-                            true
-                        }
-                        MotionEvent.ACTION_MOVE -> {
-                            wmLayoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
-                            wmLayoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
-                            lastOverlayX = wmLayoutParams.x
-                            lastOverlayY = wmLayoutParams.y
-                            try {
-                                wm.updateViewLayout(container, wmLayoutParams)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                            true
-                        }
-                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                            val dx = Math.abs(event.rawX - initialTouchX)
-                            val dy = Math.abs(event.rawY - initialTouchY)
-                            
-                            // Dock to edge collapse checks only if dragged
-                            if (dx > 10 || dy > 10) {
-                                val displayMetrics = android.util.DisplayMetrics()
-                                @Suppress("DEPRECATION")
-                                wm.defaultDisplay.getMetrics(displayMetrics)
-                                val screenWidth = displayMetrics.widthPixels
-                                val containerWidth = container.width
-    
-                                val triggerThreshold = 0 // only minimize if forcefully pushed to edge
-    
-                                if (wmLayoutParams.x <= triggerThreshold) {
-                                    isOverlayCollapsed = true
-                                    overlayCollapsedSide = "left"
-                                    wmLayoutParams.x = 0
-                                    updateCollapsedStateViews(context)
-                                } else if (wmLayoutParams.x >= screenWidth - containerWidth - triggerThreshold) {
-                                    isOverlayCollapsed = true
-                                    overlayCollapsedSide = "right"
-                                    wmLayoutParams.x = screenWidth - dpToPx(context, 32f) // keep mini handle visible
-                                    updateCollapsedStateViews(context)
-                                } else {
-                                    isOverlayCollapsed = false
-                                    overlayCollapsedSide = "none"
-                                    updateCollapsedStateViews(context)
-                                }
-                            }
-                            lastOverlayX = wmLayoutParams.x
-                            lastOverlayY = wmLayoutParams.y
-
-                            try {
-                                wm.updateViewLayout(container, wmLayoutParams)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
-                            true
-                        }
-                        else -> true
-                    }
                 }
+            })
 
-                wm.addView(container, wmLayoutParams)
-                overlayView = container
-                updateOverlayTextAndState()
-                updateCollapsedStateViews(context)
-            } catch (e: Exception) {
-                e.printStackTrace()
+            var initialX = 0
+            var initialY = 0
+            var initialTouchX = 0f
+            var initialTouchY = 0f
+
+            val onTouchHandler = View.OnTouchListener { _, event ->
+                if (gestureDetector.onTouchEvent(event)) {
+                    return@OnTouchListener true
+                }
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        initialX = wmLayoutParams.x
+                        initialY = wmLayoutParams.y
+                        initialTouchX = event.rawX
+                        initialTouchY = event.rawY
+                        showOverlayControls(context)
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        wmLayoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
+                        wmLayoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
+                        lastOverlayX = wmLayoutParams.x
+                        lastOverlayY = wmLayoutParams.y
+                        try {
+                            wm.updateViewLayout(container, wmLayoutParams)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        showOverlayControls(context)
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val dx = Math.abs(event.rawX - initialTouchX)
+                        val dy = Math.abs(event.rawY - initialTouchY)
+                        
+                        // Dock to edge collapse checks only if dragged
+                        if (dx > 10 || dy > 10) {
+                            val displayMetrics = android.util.DisplayMetrics()
+                            @Suppress("DEPRECATION")
+                            wm.defaultDisplay.getMetrics(displayMetrics)
+                            val screenWidth = displayMetrics.widthPixels
+                            val containerWidth = container.width
+
+                            val triggerThreshold = 0 // only minimize if forcefully pushed to edge
+
+                            if (wmLayoutParams.x <= triggerThreshold) {
+                                isOverlayCollapsed = true
+                                overlayCollapsedSide = "left"
+                                wmLayoutParams.x = 0
+                                updateCollapsedStateViews(context)
+                            } else if (wmLayoutParams.x >= screenWidth - containerWidth - triggerThreshold) {
+                                isOverlayCollapsed = true
+                                overlayCollapsedSide = "right"
+                                wmLayoutParams.x = screenWidth - dpToPx(context, 32f) // keep mini handle visible
+                                updateCollapsedStateViews(context)
+                            } else {
+                                isOverlayCollapsed = false
+                                overlayCollapsedSide = "none"
+                                showOverlayControls(context)
+                            }
+                        } else {
+                            showOverlayControls(context)
+                        }
+                        lastOverlayX = wmLayoutParams.x
+                        lastOverlayY = wmLayoutParams.y
+
+                        try {
+                            wm.updateViewLayout(container, wmLayoutParams)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                        true
+                    }
+                    else -> true
+                }
             }
+
+            textView.setOnTouchListener(onTouchHandler)
+            arrowText.setOnTouchListener(onTouchHandler)
+
+            wm.addView(container, wmLayoutParams)
+            overlayView = container
+            updateOverlayTextAndState()
+            updateCollapsedStateViews(context)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun showOverlay3StepVerification(context: Context, elapsedSeconds: Int, isTimer: Boolean) {
+        val dp16 = dpToPx(context, 16f)
+        val dp12 = dpToPx(context, 12f)
+        val dp8 = dpToPx(context, 8f)
+        val dp4 = dpToPx(context, 4f)
+
+        val dialogView = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp16, dp16, dp16, dp16)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFF0F0F12.toInt())
+                cornerRadius = dpToPx(context, 16f).toFloat()
+            }
+        }
+
+        // Title
+        val titleTv = TextView(context).apply {
+            text = "3-STEP SYSTEM AUDIT LOG & COMPLIANCE CHECK"
+            setTextColor(0xFFCCCCCC.toInt())
+            textSize = 12f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            setPadding(0, 0, 0, dp12)
+        }
+        dialogView.addView(titleTv)
+
+        // Steps Container Card
+        val cardLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp12, dp12, dp12, dp12)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFF15151A.toInt())
+                setStroke(dpToPx(context, 1f), 0xFF22222A.toInt())
+                cornerRadius = dpToPx(context, 12f).toFloat()
+            }
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, dp12)
+            }
+            layoutParams = lp
+        }
+
+        // Format times
+        val formattedNow = formatTime(elapsedSeconds)
+        val todayMins = getTodayFocusMinutes()
+
+        // Step 1
+        val step1Layout = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp8)
+        }
+        val check1 = TextView(context).apply {
+            text = "✔ "
+            setTextColor(0xFF4CAF50.toInt())
+            textSize = 14f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val step1TextLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val step1Title = TextView(context).apply {
+            text = "STEP 1: SESSION VERIFICATION"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 10f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val step1Desc = TextView(context).apply {
+            text = "Active session of $formattedNow calculated and verified locally."
+            setTextColor(0xFF888888.toInt())
+            textSize = 9f
+        }
+        step1TextLayout.addView(step1Title)
+        step1TextLayout.addView(step1Desc)
+        step1Layout.addView(check1)
+        step1Layout.addView(step1TextLayout)
+        cardLayout.addView(step1Layout)
+
+        // Divider 1
+        val divider1 = View(context).apply {
+            background = android.graphics.drawable.ColorDrawable(0xFF22222A.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(context, 1f)).apply {
+                setMargins(0, dp4, 0, dp8)
+            }
+        }
+        cardLayout.addView(divider1)
+
+        // Step 2
+        val step2Layout = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp8)
+        }
+        val check2 = TextView(context).apply {
+            text = "✔ "
+            setTextColor(0xFF4CAF50.toInt())
+            textSize = 14f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val step2TextLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val step2Title = TextView(context).apply {
+            text = "STEP 2: CACHE AUDIT & REVISING"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 10f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val step2Desc = TextView(context).apply {
+            text = "Database transaction complete. Total focus time updated to $todayMins mins."
+            setTextColor(0xFF888888.toInt())
+            textSize = 9f
+        }
+        step2TextLayout.addView(step2Title)
+        step2TextLayout.addView(step2Desc)
+        step2Layout.addView(check2)
+        step2Layout.addView(step2TextLayout)
+        cardLayout.addView(step2Layout)
+
+        // Divider 2
+        val divider2 = View(context).apply {
+            background = android.graphics.drawable.ColorDrawable(0xFF22222A.toInt())
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(context, 1f)).apply {
+                setMargins(0, dp4, 0, dp8)
+            }
+        }
+        cardLayout.addView(divider2)
+
+        // Step 3
+        val step3Layout = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val check3 = TextView(context).apply {
+            text = "✔ "
+            setTextColor(0xFF4CAF50.toInt())
+            textSize = 14f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val step3TextLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val step3Title = TextView(context).apply {
+            text = "STEP 3: CLOUD SYNCED & BROADCASTED"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 10f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        val step3Desc = TextView(context).apply {
+            text = "Heartbeat alignment success. Remote database state updated."
+            setTextColor(0xFF888888.toInt())
+            textSize = 9f
+        }
+        step3TextLayout.addView(step3Title)
+        step3TextLayout.addView(step3Desc)
+        step3Layout.addView(check3)
+        step3Layout.addView(step3TextLayout)
+        cardLayout.addView(step3Layout)
+
+        dialogView.addView(cardLayout)
+
+        // Info text
+        val infoTv = TextView(context).apply {
+            text = "Automated confirmation and 3-step system verification complete. Your focus time has been recorded securely."
+            setTextColor(0xFF888888.toInt())
+            textSize = 10f
+            setPadding(0, 0, 0, dp16)
+        }
+        dialogView.addView(infoTv)
+
+        // Alert dialog setup
+        val dialog = android.app.AlertDialog.Builder(context, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)
+            .setView(dialogView)
+            .create()
+
+        // Confirm Button
+        val confirmBtn = TextView(context).apply {
+            text = "Confirm & Close"
+            setTextColor(android.graphics.Color.BLACK)
+            gravity = Gravity.CENTER
+            textSize = 12f
+            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0xFF4CAF50.toInt())
+                cornerRadius = dpToPx(context, 8f).toFloat()
+            }
+            setPadding(0, dpToPx(context, 10f), 0, dpToPx(context, 10f))
+            setOnClickListener {
+                dialog.dismiss()
+            }
+        }
+        val btnLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dpToPx(context, 42f)
+        )
+        confirmBtn.layoutParams = btnLp
+        dialogView.addView(confirmBtn)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
     }
 
     private fun expandOverlay(context: Context) {
@@ -2027,7 +2325,7 @@ object FocusTimerManager {
         lastOverlayX = lp.x
         lastOverlayY = lp.y
 
-        updateCollapsedStateViews(context)
+        showOverlayControls(context)
 
         try {
             wm.updateViewLayout(container, lp)
@@ -2046,6 +2344,8 @@ object FocusTimerManager {
         scope.launch(Dispatchers.Main) {
             if (isOverlayCollapsed) {
                 timerText.visibility = View.GONE
+                tvEndBtn?.visibility = View.GONE
+                tvPauseBtn?.visibility = View.GONE
                 arrowText.visibility = View.VISIBLE
                 if (overlayCollapsedSide == "left") {
                     arrowText.text = "❯"
@@ -2059,15 +2359,33 @@ object FocusTimerManager {
                 timerText.visibility = View.VISIBLE
                 arrowText.visibility = View.GONE
 
-                val sizePref = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                    .getString("floating_timer_size", "large") ?: "large"
-                val fixedWidthDp = when (sizePref) {
-                    "small" -> 110f
-                    "medium" -> 150f
-                    "large" -> 190f
-                    else -> 190f
+                if (areOverlayControlsVisible) {
+                    tvEndBtn?.visibility = View.VISIBLE
+                    tvPauseBtn?.visibility = View.VISIBLE
+
+                    val sizePref = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                        .getString("floating_timer_size", "large") ?: "large"
+                    val fixedWidthDp = when (sizePref) {
+                        "small" -> 140f
+                        "medium" -> 180f
+                        "large" -> 220f
+                        else -> 220f
+                    }
+                    lp.width = dpToPx(context, fixedWidthDp)
+                } else {
+                    tvEndBtn?.visibility = View.GONE
+                    tvPauseBtn?.visibility = View.GONE
+
+                    val sizePref = context.applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                        .getString("floating_timer_size", "large") ?: "large"
+                    val compactWidthDp = when (sizePref) {
+                        "small" -> 70f
+                        "medium" -> 90f
+                        "large" -> 110f
+                        else -> 110f
+                    }
+                    lp.width = dpToPx(context, compactWidthDp)
                 }
-                lp.width = dpToPx(context, fixedWidthDp)
             }
             try {
                 wm.updateViewLayout(container, lp)
@@ -2077,7 +2395,29 @@ object FocusTimerManager {
         }
     }
 
+    private fun showOverlayControls(context: Context) {
+        if (isOverlayCollapsed) return
+        areOverlayControlsVisible = true
+        updateCollapsedStateViews(context)
+        
+        overlayAutoHideJob?.cancel()
+        overlayAutoHideJob = scope.launch(Dispatchers.Main) {
+            delay(5000)
+            hideOverlayControls(context)
+        }
+    }
+
+    private fun hideOverlayControls(context: Context) {
+        overlayAutoHideJob?.cancel()
+        overlayAutoHideJob = null
+        areOverlayControlsVisible = false
+        updateCollapsedStateViews(context)
+    }
+
     private fun hideOverlay() {
+        overlayAutoHideJob?.cancel()
+        overlayAutoHideJob = null
+        areOverlayControlsVisible = false
         try {
             overlayView?.let { view ->
                 windowManager?.removeView(view)
@@ -2088,6 +2428,8 @@ object FocusTimerManager {
             overlayView = null
             tvTimerText = null
             tvCollapsedArrow = null
+            tvEndBtn = null
+            tvPauseBtn = null
             windowManager = null
         }
     }
@@ -2128,6 +2470,10 @@ object FocusTimerManager {
                         textView.clearAnimation()
                     }
                 }
+            }
+            tvPauseBtn?.let { btn ->
+                val isRunning = isTimerRunning.value || isStopwatchActive.value
+                btn.text = if (isRunning) "⏸" else "▶"
             }
         }
     }

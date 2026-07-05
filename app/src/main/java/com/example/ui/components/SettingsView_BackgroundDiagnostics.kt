@@ -32,6 +32,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.AppViewModel
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import com.google.firebase.messaging.FirebaseMessaging
 
 @Composable
 fun SettingsBackgroundDiagnosticsPage(
@@ -41,10 +44,26 @@ fun SettingsBackgroundDiagnosticsPage(
     val context = LocalContext.current
     var isIgnoringOptimizations by remember { mutableStateOf(checkBatteryOptimizations(context)) }
     var selectedBrandTab by remember { mutableStateOf("samsung") }
+    var fcmToken by remember { mutableStateOf("Fetching FCM Token...") }
+    var isFcmWorking by remember { mutableStateOf<Boolean?>(null) }
 
     // Re-check optimization status when entering or active
     LaunchedEffect(Unit) {
         isIgnoringOptimizations = checkBatteryOptimizations(context)
+        try {
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    fcmToken = task.result ?: "Token is null"
+                    isFcmWorking = true
+                } else {
+                    fcmToken = "Error: ${task.exception?.message ?: "Unknown error"}"
+                    isFcmWorking = false
+                }
+            }
+        } catch (e: Exception) {
+            fcmToken = "FCM Error or not initialized: ${e.message}"
+            isFcmWorking = false
+        }
     }
 
     SettingsPageScope {
@@ -343,6 +362,111 @@ fun SettingsBackgroundDiagnosticsPage(
                                 .clip(CircleShape)
                                 .background(if (isServiceActive) Color(0xFF4CAF50) else Color(0xFFD32F2F))
                         )
+                    }
+                }
+
+                // 5. Firebase Cloud Messaging (FCM) Status
+                val clipboardManager = LocalClipboardManager.current
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0A0A0C)),
+                    border = BorderStroke(1.dp, if (isFcmWorking == true) Color(0xFF2E7D32) else Color(0xFF222226)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "FIREBASE CLOUD MESSAGING (FCM)",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = when (isFcmWorking) {
+                                        true -> "FCM Service initialized and active."
+                                        false -> "FCM failed or Google Play Services missing."
+                                        else -> "Retrieving push notification status..."
+                                    },
+                                    color = if (isFcmWorking == true) Color(0xFF4CAF50) else Color.Gray,
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when (isFcmWorking) {
+                                            true -> Color(0xFF4CAF50)
+                                            false -> Color(0xFFD32F2F)
+                                            else -> Color.Gray
+                                        }
+                                    )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "FCM REGISTRATION TOKEN",
+                            color = Color(0xFF03A9F4),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF15151A), RoundedCornerShape(6.dp))
+                                .border(1.dp, Color(0xFF22222A), RoundedCornerShape(6.dp))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = fcmToken,
+                                color = Color.LightGray,
+                                fontSize = 9.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                if (isFcmWorking == true) {
+                                    clipboardManager.setText(AnnotatedString(fcmToken))
+                                    Toast.makeText(context, "FCM Token copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "FCM Token is not available to copy.", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isFcmWorking == true) Color(0xFF0288D1) else Color(0xFF222226),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(36.dp)
+                        ) {
+                            Text(
+                                text = "Copy FCM Token",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
