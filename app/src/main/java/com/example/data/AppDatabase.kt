@@ -562,6 +562,19 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+val autoMigrations = (13..19).map { startVersion ->
+    object : Migration(startVersion, 20) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("CREATE TABLE IF NOT EXISTS `keep_notes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `content` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `isPinned` INTEGER NOT NULL, `colorHex` TEXT NOT NULL, `isSynced` INTEGER NOT NULL, `websiteUrl` TEXT, `customLogoUrl` TEXT)")
+            database.execSQL("CREATE TABLE IF NOT EXISTS `health_records` (`dateString` TEXT NOT NULL, `steps` INTEGER NOT NULL, `stepGoal` INTEGER NOT NULL, `sleepMinutes` INTEGER NOT NULL, `sleepGoalMinutes` INTEGER NOT NULL, `waterMl` INTEGER NOT NULL, `waterGoalMl` INTEGER NOT NULL, `caloriesBurned` INTEGER NOT NULL, `calorieGoal` INTEGER NOT NULL, `activeMinutes` INTEGER NOT NULL, `activeMinutesGoal` INTEGER NOT NULL, `heartRateAvg` INTEGER NOT NULL, `heartRateMin` INTEGER NOT NULL, `heartRateMax` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `isSynced` INTEGER NOT NULL, PRIMARY KEY(`dateString`))")
+            try { database.execSQL("ALTER TABLE `health_records` ADD COLUMN `breakfastFoods` TEXT NOT NULL DEFAULT ''") } catch (e: Exception) {}
+            try { database.execSQL("ALTER TABLE `health_records` ADD COLUMN `lunchFoods` TEXT NOT NULL DEFAULT ''") } catch (e: Exception) {}
+            try { database.execSQL("ALTER TABLE `health_records` ADD COLUMN `dinnerFoods` TEXT NOT NULL DEFAULT ''") } catch (e: Exception) {}
+            try { database.execSQL("ALTER TABLE `health_records` ADD COLUMN `snacksFoods` TEXT NOT NULL DEFAULT ''") } catch (e: Exception) {}
+        }
+    }
+}.toTypedArray()
+
 @Database(
     entities = [
         Task::class,
@@ -617,7 +630,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
-                .addMigrations(MIGRATION_12_13)
+                .addMigrations(MIGRATION_12_13, *autoMigrations)
                 .build()
                 INSTANCE = instance
                 instance
