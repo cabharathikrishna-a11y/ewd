@@ -103,6 +103,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
     var viewingEntry by remember { mutableStateOf<JournalEntry?>(null) }
     val timelineListState = rememberLazyListState()
+    val monthlyListState = rememberLazyListState(initialFirstVisibleItemIndex = 60)
 
     val extSelectedJournalId by viewModel.selectedJournalId.collectAsState()
     LaunchedEffect(extSelectedJournalId) {
@@ -887,6 +888,12 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 modifier = Modifier.fillMaxSize()
                                             ) {
                                             items(entries) { entry ->
+                                                val photoPath = remember(entry) {
+                                                    entry.attachmentsJson
+                                                        .split(";;")
+                                                        .find { it.trim().startsWith("photo:") }
+                                                        ?.removePrefix("photo:")
+                                                }
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
@@ -899,12 +906,25 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                     Box(
                                                         modifier = Modifier
                                                             .width(68.dp)
-                            .height(58.dp)
+                                                            .height(58.dp)
                                                             .clip(RoundedCornerShape(8.dp))
-                                                            .background(WaterBlue)
+                                                            .background(if (!photoPath.isNullOrEmpty()) Color.Transparent else WaterBlue)
                                                             .padding(4.dp),
                                                         contentAlignment = Alignment.Center
                                                     ) {
+                                                        if (!photoPath.isNullOrEmpty()) {
+                                                            AsyncImage(
+                                                                model = if (photoPath.startsWith("http")) photoPath else java.io.File(photoPath),
+                                                                contentDescription = "Background photo",
+                                                                contentScale = ContentScale.Crop,
+                                                                modifier = Modifier.fillMaxSize()
+                                                            )
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxSize()
+                                                                    .background(Color.Black.copy(alpha = 0.5f))
+                                                            )
+                                                        }
                                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                             val dateParts = try {
                                                                 val inputSdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -915,8 +935,22 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                             } catch (e: Exception) {
                                                                 Pair("MEM", "??")
                                                             }
-                                                            Text(text = dateParts.first, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                                                            Text(text = dateParts.second, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+                                                            Text(
+                                                                text = dateParts.first,
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color.White,
+                                                                maxLines = 1,
+                                                                softWrap = false
+                                                            )
+                                                            Text(
+                                                                text = dateParts.second,
+                                                                fontSize = 20.sp,
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                color = Color.White,
+                                                                maxLines = 1,
+                                                                softWrap = false
+                                                            )
                                                         }
                                                     }
 
@@ -1043,97 +1077,275 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             }
 
                             "Monthly" -> {
-                                Column {
-                                    Text(
-                                        text = "MONTHLY PHOTO CALENDAR",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Gray,
-                                        modifier = Modifier.padding(bottom = 12.dp)
-                                    )
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    val monthOffsets = remember { (-60..12).toList() }
+                                    val todayCal = remember { java.util.Calendar.getInstance() }
+                                    val todayDateStr = remember {
+                                        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                                    }
 
-                                    val daysInMonth = (1..30).toList()
+                                    // Calendar Header Actions
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(bottom = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "MONTHLY PHOTO CALENDAR",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Gray
+                                        )
 
-                                    LazyVerticalGrid(
-                                        columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(5),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        TextButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    monthlyListState.animateScrollToItem(60)
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Today,
+                                                    contentDescription = null,
+                                                    tint = WaterBlue,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Jump to Today",
+                                                    color = WaterBlue,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    LazyColumn(
+                                        state = monthlyListState,
+                                        verticalArrangement = Arrangement.spacedBy(20.dp),
                                         modifier = Modifier.fillMaxSize()
                                     ) {
-                                        items(daysInMonth.size) { index ->
-                                            val day = daysInMonth[index]
-                                            val formattedDay = String.format("%02d", day)
-                                            val currentMonthYear = SimpleDateFormat("yyyy-MM", Locale.US).format(Date())
-                                            val targetDateString = "$currentMonthYear-$formattedDay"
+                                        items(monthOffsets) { offset ->
+                                            // Get month configuration
+                                            val monthData = remember(offset) {
+                                                val cal = java.util.Calendar.getInstance()
+                                                cal.add(java.util.Calendar.MONTH, offset)
+                                                cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                                                val monthName = cal.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.getDefault()) ?: ""
+                                                val year = cal.get(java.util.Calendar.YEAR)
+                                                val monthValue = cal.get(java.util.Calendar.MONTH)
+                                                val firstDayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK)
+                                                val daysInMonth = cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+                                                val yearMonthStr = String.format(java.util.Locale.US, "%04d-%02d", year, monthValue + 1)
 
-                                            val matchEntriesForDay = entries.filter { it.dateString == targetDateString }
-                                            val matchEntry = matchEntriesForDay.firstOrNull()
-                                            val photoPath = remember(matchEntry) {
-                                                matchEntry?.attachmentsJson
-                                                    ?.split(";;")
-                                                    ?.find { it.trim().startsWith("photo:") }
-                                                    ?.removePrefix("photo:")
+                                                val numBlanks = firstDayOfWeek - 1
+                                                val cellsList = mutableListOf<Int?>()
+                                                repeat(numBlanks) { cellsList.add(null) }
+                                                for (d in 1..daysInMonth) { cellsList.add(d) }
+                                                while (cellsList.size % 7 != 0) { cellsList.add(null) }
+
+                                                Triple(monthName.uppercase(), year, yearMonthStr to cellsList)
                                             }
 
-                                            Box(
-                                                modifier = Modifier
-                                                    .aspectRatio(1f)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(if (matchEntry != null) WaterBlue.copy(alpha = 0.15f) else SurfaceCard)
-                                                    .border(
-                                                        width = 1.dp,
-                                                        color = if (matchEntry != null) WaterBlue else Color.Transparent,
-                                                        shape = RoundedCornerShape(8.dp)
-                                                    )
-                                                    .clickable {
-                                                        if (matchEntry != null) {
-                                                            viewingEntry = matchEntry
-                                                        } else {
-                                                            Toast.makeText(context, "No chronicle on day $day", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    },
-                                                contentAlignment = Alignment.Center
+                                            val (monthName, year, cellsPair) = monthData
+                                            val (yearMonthStr, cellsList) = cellsPair
+                                            val weeks = remember(cellsList) { cellsList.chunked(7) }
+
+                                            val isCurrentMonthYear = remember(monthName, year) {
+                                                monthName.uppercase() == todayCal.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.getDefault())?.uppercase() &&
+                                                        year == todayCal.get(java.util.Calendar.YEAR)
+                                            }
+
+                                            Card(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = CardDefaults.cardColors(containerColor = SurfaceCard.copy(alpha = 0.5f)),
+                                                border = if (isCurrentMonthYear) BorderStroke(1.dp, WaterBlue.copy(alpha = 0.3f)) else null,
+                                                shape = RoundedCornerShape(12.dp)
                                             ) {
-                                                if (!photoPath.isNullOrEmpty()) {
-                                                    AsyncImage(
-                                                        model = if (photoPath.startsWith("http")) photoPath else File(photoPath),
-                                                        contentDescription = "Memory illustration for Day $day",
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier.fillMaxSize()
-                                                    )
-                                                    Box(
+                                                Column(modifier = Modifier.padding(12.dp)) {
+                                                    // Month Header inside the card
+                                                    Row(
                                                         modifier = Modifier
-                                                            .fillMaxSize()
-                                                            .background(Color.Black.copy(alpha = 0.45f))
-                                                    )
-                                                }
+                                                            .fillMaxWidth()
+                                                            .padding(bottom = 8.dp),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            text = "$monthName $year",
+                                                            fontSize = 14.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isCurrentMonthYear) WaterBlue else Color.White
+                                                        )
+                                                        if (isCurrentMonthYear) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(4.dp))
+                                                                    .background(WaterBlue.copy(alpha = 0.2f))
+                                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text("Current Month", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = WaterBlue)
+                                                            }
+                                                        }
+                                                    }
 
-                                                Column(
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    verticalArrangement = Arrangement.Center
-                                                ) {
-                                                    Text(
-                                                        text = day.toString(),
-                                                        color = if (!photoPath.isNullOrEmpty()) Color.White else (if (matchEntry != null) WaterBlue else Color.White),
-                                                        fontSize = 14.sp,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        textAlign = TextAlign.Center
-                                                    )
+                                                    // Days of Week labels
+                                                    val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(bottom = 6.dp)
+                                                    ) {
+                                                        daysOfWeek.forEach { label ->
+                                                            Text(
+                                                                text = label,
+                                                                modifier = Modifier.weight(1f),
+                                                                textAlign = TextAlign.Center,
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color.Gray
+                                                            )
+                                                        }
+                                                    }
 
-                                                    if (matchEntriesForDay.isNotEmpty()) {
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        // Row of dark blue dots indicating number of entries created that day
+                                                    // Month Calendar Grid Rows
+                                                    weeks.forEach { week ->
                                                         Row(
-                                                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                                            verticalAlignment = Alignment.CenterVertically
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(vertical = 3.dp),
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                                         ) {
-                                                            repeat(matchEntriesForDay.size.coerceAtMost(3)) {
+                                                            week.forEach { day ->
                                                                 Box(
                                                                     modifier = Modifier
-                                                                        .size(5.dp)
-                                                                        .clip(CircleShape)
-                                                                        .background(Color(0xFF0D47A1)) // Dark Blue Dot
-                                                                )
+                                                                        .weight(1f)
+                                                                        .aspectRatio(1f)
+                                                                ) {
+                                                                    if (day != null) {
+                                                                        val targetDateString = String.format(java.util.Locale.US, "%s-%02d", yearMonthStr, day)
+                                                                        val isDayToday = (targetDateString == todayDateStr)
+
+                                                                        val matchEntriesForDay = remember(entries, targetDateString) {
+                                                                            entries.filter { it.dateString == targetDateString }
+                                                                        }
+                                                                        val matchEntry = matchEntriesForDay.firstOrNull()
+                                                                        val photoPath = remember(matchEntry) {
+                                                                            matchEntry?.attachmentsJson
+                                                                                ?.split(";;")
+                                                                                ?.find { it.trim().startsWith("photo:") }
+                                                                                ?.removePrefix("photo:")
+                                                                        }
+
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .fillMaxSize()
+                                                                                .clip(RoundedCornerShape(8.dp))
+                                                                                .background(
+                                                                                    if (matchEntry != null) {
+                                                                                        if (!photoPath.isNullOrEmpty()) Color.Transparent else WaterBlue.copy(alpha = 0.15f)
+                                                                                    } else {
+                                                                                        SurfaceCard
+                                                                                    }
+                                                                                )
+                                                                                .border(
+                                                                                    width = if (isDayToday) 2.dp else (if (matchEntry != null) 1.dp else 0.dp),
+                                                                                    color = if (isDayToday) WaterBlue else (if (matchEntry != null) WaterBlue.copy(alpha = 0.6f) else Color.Transparent),
+                                                                                    shape = RoundedCornerShape(8.dp)
+                                                                                )
+                                                                                .clickable {
+                                                                                    if (matchEntry != null) {
+                                                                                        viewingEntry = matchEntry
+                                                                                    } else {
+                                                                                        // Open creator with targetDateString pre-populated!
+                                                                                        val sdfTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                                                                                        val nowStrTime = sdfTime.format(java.util.Date())
+                                                                                        val targetInitialText = "Date & Time: $targetDateString $nowStrTime\n\n"
+
+                                                                                        val parsedDate = try {
+                                                                                            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(targetDateString)
+                                                                                        } catch (e: Exception) {
+                                                                                            null
+                                                                                        }
+                                                                                        val entryTimestamp = parsedDate?.time ?: System.currentTimeMillis()
+
+                                                                                        scope.launch {
+                                                                                            val generatedId = viewModel.createJournalEntryWithId(
+                                                                                                title = "",
+                                                                                                text = targetInitialText,
+                                                                                                dateString = targetDateString,
+                                                                                                timestamp = entryTimestamp,
+                                                                                                attachments = ""
+                                                                                            )
+                                                                                            activeEditingEntryId = generatedId
+                                                                                            editingTitle = ""
+                                                                                            editingTextValue = androidx.compose.ui.text.input.TextFieldValue(targetInitialText)
+                                                                                            editingDate = targetDateString
+                                                                                            editingTime = nowStrTime
+                                                                                            editingAttachments = emptyList()
+                                                                                            showEditorScreen = true
+                                                                                        }
+                                                                                        Toast.makeText(context, "Drafting chronicle for $targetDateString...", Toast.LENGTH_SHORT).show()
+                                                                                    }
+                                                                                },
+                                                                            contentAlignment = Alignment.Center
+                                                                        ) {
+                                                                            if (!photoPath.isNullOrEmpty()) {
+                                                                                AsyncImage(
+                                                                                    model = if (photoPath.startsWith("http")) photoPath else java.io.File(photoPath),
+                                                                                    contentDescription = "Memory illustration for Day $day",
+                                                                                    contentScale = ContentScale.Crop,
+                                                                                    modifier = Modifier.fillMaxSize()
+                                                                                )
+                                                                                Box(
+                                                                                    modifier = Modifier
+                                                                                        .fillMaxSize()
+                                                                                        .background(Color.Black.copy(alpha = 0.45f))
+                                                                                )
+                                                                            }
+
+                                                                            Column(
+                                                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                                                verticalArrangement = Arrangement.Center
+                                                                            ) {
+                                                                                Text(
+                                                                                    text = day.toString(),
+                                                                                    color = if (!photoPath.isNullOrEmpty()) {
+                                                                                        Color.White
+                                                                                    } else {
+                                                                                        if (isDayToday) WaterBlue else (if (matchEntry != null) WaterBlue else Color.White)
+                                                                                    },
+                                                                                    fontSize = 13.sp,
+                                                                                    fontWeight = if (isDayToday || matchEntry != null) FontWeight.ExtraBold else FontWeight.Medium,
+                                                                                    textAlign = TextAlign.Center
+                                                                                )
+
+                                                                                if (matchEntriesForDay.isNotEmpty()) {
+                                                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                                                    Row(
+                                                                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                                    ) {
+                                                                                        repeat(matchEntriesForDay.size.coerceAtMost(3)) {
+                                                                                            Box(
+                                                                                                modifier = Modifier
+                                                                                                    .size(4.dp)
+                                                                                                    .clip(CircleShape)
+                                                                                                    .background(WaterBlue)
+                                                                                            )
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -2360,6 +2572,23 @@ fun JournalMapView(
     val downloadError by MapDownloadManager.downloadError.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineOk = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
+        val coarseOk = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
+        if (fineOk || coarseOk) {
+            Toast.makeText(context, "Pinpointing GPS...", Toast.LENGTH_SHORT).show()
+            triggerFetchLocation(context) { lat, lng, city ->
+                mforgeViewRef?.setCenter(org.mapsforge.core.model.LatLong(lat, lng))
+                mforgeViewRef?.setZoomLevel(14.toByte())
+                Toast.makeText(context, "Centered at $city", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     var selectedLocationEntries by remember { mutableStateOf<List<JournalEntry>>(emptyList()) }
     var showLocationEntriesDialog by remember { mutableStateOf(false) }
     var selectedLocationName by remember { mutableStateOf("") }
@@ -2629,6 +2858,38 @@ fun JournalMapView(
                             e.printStackTrace()
                         }
                     }
+                }
+
+                // My Location Button Overlay on Map
+                FloatingActionButton(
+                    onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                            )
+                        } else {
+                            Toast.makeText(context, "Pinpointing GPS...", Toast.LENGTH_SHORT).show()
+                            triggerFetchLocation(context) { lat, lng, city ->
+                                mforgeViewRef?.setCenter(org.mapsforge.core.model.LatLong(lat, lng))
+                                mforgeViewRef?.setZoomLevel(14.toByte())
+                                Toast.makeText(context, "Centered at $city", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    containerColor = WaterBlue,
+                    contentColor = Color.Black,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                        .testTag("map_my_location_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = "My Location"
+                    )
                 }
             }
 

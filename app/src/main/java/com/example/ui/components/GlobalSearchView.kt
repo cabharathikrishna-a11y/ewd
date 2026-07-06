@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -105,6 +108,14 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     }
                 },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        if (inputQuery.trim().isNotEmpty()) {
+                            viewModel.addSearchHistory(inputQuery.trim())
+                        }
+                    }
+                ),
                 colors = TextFieldDefaults.colors(
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.LightGray,
@@ -215,6 +226,7 @@ fun GlobalSearchView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     .clickable {
                                         inputQuery = logQuery
                                         viewModel.setGlobalSearchQuery(logQuery)
+                                        viewModel.addSearchHistory(logQuery)
                                     }
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically

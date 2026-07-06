@@ -146,6 +146,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     private val _currentScreen = MutableStateFlow(if (_isLoggedIn.value) Screen.DEEPA_AI else Screen.LOGIN)
     val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
 
+    private val _previousScreenBeforeSettings = MutableStateFlow<Screen?>(null)
+    val previousScreenBeforeSettings: StateFlow<Screen?> = _previousScreenBeforeSettings.asStateFlow()
+
     private val _settingsActivePage = MutableStateFlow(0)
     val settingsActivePage: StateFlow<Int> = _settingsActivePage.asStateFlow()
 
@@ -199,6 +202,15 @@ class AppViewModel(application: Application, private val repository: LocalReposi
 
     private val _waterGlassesToday = MutableStateFlow(0)
     val waterGlassesToday: StateFlow<Int> = _waterGlassesToday.asStateFlow()
+
+    private val _defaultStepGoal = MutableStateFlow(10000)
+    val defaultStepGoal: StateFlow<Int> = _defaultStepGoal.asStateFlow()
+
+    private val _defaultSleepGoalMinutes = MutableStateFlow(480)
+    val defaultSleepGoalMinutes: StateFlow<Int> = _defaultSleepGoalMinutes.asStateFlow()
+
+    private val _defaultWaterGoalMl = MutableStateFlow(2000)
+    val defaultWaterGoalMl: StateFlow<Int> = _defaultWaterGoalMl.asStateFlow()
 
     private val _antiBurnScreenEnabled = MutableStateFlow(false)
     val antiBurnScreenEnabled: StateFlow<Boolean> = _antiBurnScreenEnabled.asStateFlow()
@@ -980,6 +992,18 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     }
 
     init {
+        viewModelScope.launch {
+            var prevScreen: Screen? = null
+            _currentScreen.collect { screen ->
+                if (screen == Screen.SETTINGS) {
+                    if (prevScreen != null && prevScreen != Screen.SETTINGS) {
+                        _previousScreenBeforeSettings.value = prevScreen
+                    }
+                }
+                prevScreen = screen
+            }
+        }
+
         refreshCompletedTasks()
         checkAndProcessRecurringTasks()
         viewModelScope.launch {
@@ -1109,10 +1133,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         if (_isLoggedIn.value && !_isAdmin.value && _currentUsername.value != null) {
             viewModelScope.launch {
                 try {
-                    val response = com.example.api.FirebaseClient.api.getUsers()
-                    val users = if (response.isSuccessful) response.body() else null
                     val username = _currentUsername.value ?: ""
-                    val rawUser = users?.get(username)
+                    val response = if (username.isNotEmpty()) com.example.api.FirebaseClient.api.getUser(username) else null
+                    val rawUser = if (response?.isSuccessful == true) response.body() else null
                     val remoteUser = rawUser?.let { mergeWithLocalCache(it) }
                     if (remoteUser != null) {
                         _currentUserRemote.value = remoteUser
@@ -1205,6 +1228,10 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         _waterReminderIntervalMins.value = prefs.getFloat("water_reminder_interval_mins", 60.0f)
         _waterReminderStartTime.value = prefs.getString("water_reminder_start_time", "08:00") ?: "08:00"
         _waterReminderEndTime.value = prefs.getString("water_reminder_end_time", "22:00") ?: "22:00"
+
+        _defaultStepGoal.value = prefs.getInt("default_step_goal", 10000)
+        _defaultSleepGoalMinutes.value = prefs.getInt("default_sleep_goal_minutes", 480)
+        _defaultWaterGoalMl.value = prefs.getInt("default_water_goal_ml", 2000)
 
         _tabBarOrientation.value = prefs.getString("tab_bar_orientation", "vertical") ?: "vertical"
         _taskVibrationEnabled.value = prefs.getBoolean("task_vibration_enabled", true)
@@ -1363,8 +1390,8 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                             // Instantly request KeepAliveService notification check
                             com.example.service.KeepAliveService.updateNotification(getApplication())
                             
-                            // Synchronize peer-to-peer focus records (run on first poll or every 12th poll (~5 minutes) to save traffic)
-                            if (isFirstPoll || pollCount >= 12) {
+                            // Synchronize peer-to-peer focus records (run on first poll or every 2nd poll (~6 minutes) to save traffic)
+                            if (isFirstPoll || pollCount >= 2) {
                                 checkAndRequestPeerData()
                                 processPeerRequests()
                                 checkAndDownloadTransferredData()
@@ -1380,7 +1407,7 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                         android.util.Log.e("AppViewModel", "Periodic users fetch failed: ", e)
                     }
                 }
-                kotlinx.coroutines.delay(25000) // Poll every 25s for live focus updates (reduced from 5s to save Firebase traffic)
+                kotlinx.coroutines.delay(180000) // Poll every 3 minutes for live focus updates (reduced from 25s to save massive Firebase traffic)
             }
         }
 
@@ -1570,8 +1597,25 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         
         var needsReset = false
         if (lastResetDate != todayStr) {
-            android.util.Log.i("AppViewModel", "Midnight detected in poll! Resetting today's focus metrics.")
+            android.util.Log.i("AppViewModel", "Midnight detected in poll! Resetting today's focus metrics and habit streaks.")
             FocusTimerManager.setTodayPomosCount(0)
+            
+            // Recalculate habit streaks at midnight
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val allHabits = repository.allHabits.first()
+                    val allComps = repository.allCompletions.first()
+                    allHabits.forEach { habit ->
+                        val computedStreak = com.example.util.HabitStreakHelper.calculateStreak(habit, allComps)
+                        if (habit.streakCount != computedStreak) {
+                            repository.updateHabit(habit.copy(streakCount = computedStreak))
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             prefs.edit()
                 .putInt("today_pomos_count", 0)
                 .putString("last_midnight_reset_date", todayStr)
@@ -1586,9 +1630,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
             if (_isLoggedIn.value && !_isAdmin.value && username != null) {
                 viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     try {
-                        val response = com.example.api.FirebaseClient.api.getUsers()
-                        val users = if (response.isSuccessful) response.body() else null
-                        val baseUser = users?.get(username) ?: _currentUserRemote.value ?: run {
+                        val response = com.example.api.FirebaseClient.api.getUser(username)
+                        val baseUser = if (response.isSuccessful) response.body() else null
+                        val userToReset = baseUser ?: _currentUserRemote.value ?: run {
                             val cachedName = prefs.getString("user_name_${username}", username)
                             val cachedNickname = prefs.getString("user_nickname_${username}", username)
                             val cachedEmoji = prefs.getString("user_emoji_${username}", "🎯")
@@ -1601,7 +1645,7 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                             )
                         }
                         
-                        val updatedUser = baseUser.copy(
+                        val updatedUser = userToReset.copy(
                             accumulatedTimeMs = 0L,
                             todaysFocusRecords = emptyList()
                         )
@@ -1915,6 +1959,21 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     fun updateWaterReminderEndTime(time: String) {
         _waterReminderEndTime.value = time
         prefs.edit().putString("water_reminder_end_time", time).apply()
+    }
+
+    fun updateDefaultStepGoal(goal: Int) {
+        _defaultStepGoal.value = goal
+        prefs.edit().putInt("default_step_goal", goal).apply()
+    }
+
+    fun updateDefaultSleepGoalMinutes(mins: Int) {
+        _defaultSleepGoalMinutes.value = mins
+        prefs.edit().putInt("default_sleep_goal_minutes", mins).apply()
+    }
+
+    fun updateDefaultWaterGoalMl(goal: Int) {
+        _defaultWaterGoalMl.value = goal
+        prefs.edit().putInt("default_water_goal_ml", goal).apply()
     }
 
     fun loadWaterGlassesToday() {
@@ -2416,9 +2475,8 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     fun handleGoogleSignInSuccess(username: String, email: String, displayName: String, idToken: String? = null) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val response = com.example.api.FirebaseClient.api.getUsers()
-                val users = if (response.isSuccessful) response.body() else null
-                val user = users?.get(username)
+                val response = com.example.api.FirebaseClient.api.getUser(username)
+                val user = if (response.isSuccessful) response.body() else null
                 
                 val userToSet = if (user != null) {
                     user.copy(isGoogleUser = true, email = email, status = "active")
@@ -3731,19 +3789,37 @@ class AppViewModel(application: Application, private val repository: LocalReposi
 
     fun toggleHabit(habit: Habit, dateString: String) {
         viewModelScope.launch {
+            if (habit.frequency.uppercase() == "WEEKLY") {
+                try {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    val date = sdf.parse(dateString)
+                    val cal = java.util.Calendar.getInstance()
+                    if (date != null) {
+                        cal.time = date
+                        val dayOfWeek = cal.get(java.util.Calendar.DAY_OF_WEEK)
+                        if (dayOfWeek != habit.weeklyDay) {
+                            // Cancel toggling as it is not the scheduled day of week
+                            return@launch
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             val exists = habitCompletions.value.any { it.habitId == habit.id && it.dateString == dateString }
             if (exists) {
                 repository.deleteHabitCompletion(habit.id, dateString)
-                val newStreak = maxOf(0, habit.streakCount - 1)
-                repository.updateHabit(habit.copy(streakCount = newStreak))
             } else {
                 repository.insertHabitCompletion(habit.id, dateString)
-                val newStreak = habit.streakCount + 1
-                repository.updateHabit(habit.copy(
-                    streakCount = newStreak,
-                    lastCompletedTimestamp = System.currentTimeMillis()
-                ))
             }
+            // Use the streak helper to calculate the accurate streak
+            val allComps = repository.allCompletions.first()
+            val newStreak = com.example.util.HabitStreakHelper.calculateStreak(habit, allComps)
+            repository.updateHabit(habit.copy(
+                streakCount = newStreak,
+                lastCompletedTimestamp = if (!exists) System.currentTimeMillis() else habit.lastCompletedTimestamp
+            ))
         }
     }
 
@@ -6462,12 +6538,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
 
     fun setGlobalSearchQuery(query: String) {
         _globalSearchQuery.value = query
-        if (query.trim().isNotEmpty()) {
-            addSearchHistory(query.trim())
-        }
     }
 
-    private fun addSearchHistory(query: String) {
+    fun addSearchHistory(query: String) {
         val currentList = _globalSearchHistory.value.toMutableList()
         currentList.remove(query)
         currentList.add(0, query)
@@ -6718,13 +6791,13 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         prefs.edit().putLong("last_device_active_timestamp", System.currentTimeMillis()).apply()
     }
 
-    fun trackSleepFromDeviceUsage(context: android.content.Context) {
+    fun trackSleepFromDeviceUsage(context: android.content.Context, force: Boolean = false) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
             val todayStr = getCurrentDateString()
             val lastCalcDate = prefs.getString("last_calculated_sleep_date", "")
 
-            if (lastCalcDate == todayStr) return@launch
+            if (!force && lastCalcDate == todayStr) return@launch
 
             var diffMinutes = 0
             var sleepStart = 0L
@@ -6741,6 +6814,7 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                     val startTime = now - 24 * 60 * 60 * 1000L
                     val usageEvents = usm.queryEvents(startTime, now)
 
+                    val bootTime = prefs.getLong("last_device_boot_timestamp", 0L)
                     val timestamps = mutableListOf<Long>()
                     val event = android.app.usage.UsageEvents.Event()
                     while (usageEvents.hasNextEvent()) {
@@ -6749,7 +6823,14 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                         val isUserActive = event.eventType == android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED ||
                                 event.eventType == android.app.usage.UsageEvents.Event.USER_INTERACTION
                         if (isUserActive) {
-                            timestamps.add(event.timeStamp)
+                            // If there is a known boot time in the queried range, ignore events within 15 mins of it 
+                            // to filter out automated system/startup tasks as user activity.
+                            val isWithinBootStartup = bootTime > 0L && 
+                                    event.timeStamp >= bootTime && 
+                                    event.timeStamp <= (bootTime + 15 * 60 * 1000L)
+                            if (!isWithinBootStartup) {
+                                timestamps.add(event.timeStamp)
+                            }
                         }
                     }
 
@@ -6802,15 +6883,45 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                                 val wakeMinutesTotal = wakeHour * 60 + wakeMin
                                 val sleepMinutesTotal = sleepHour * 60 + sleepMin
 
-                                val duration = if (wakeMinutesTotal < sleepMinutesTotal) {
-                                    (24 * 60) - sleepMinutesTotal + wakeMinutesTotal
+                                // Dynamically detect early wake-up if the user opened the app before the configured wakeUp time.
+                                val cal = java.util.Calendar.getInstance()
+                                val curHour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+                                val curMin = cal.get(java.util.Calendar.MINUTE)
+                                val curMinutesTotal = curHour * 60 + curMin
+
+                                var actualWakeHour = wakeHour
+                                var actualWakeMin = wakeMin
+
+                                // If curMinutesTotal is between sleepMinutesTotal and wakeMinutesTotal (taking midnight wrap into account)
+                                val isBetweenSleepAndWake = if (sleepMinutesTotal > wakeMinutesTotal) {
+                                    curMinutesTotal >= sleepMinutesTotal || curMinutesTotal < wakeMinutesTotal
                                 } else {
-                                    wakeMinutesTotal - sleepMinutesTotal
+                                    curMinutesTotal in sleepMinutesTotal until wakeMinutesTotal
+                                }
+
+                                if (isBetweenSleepAndWake) {
+                                    // Opened app early! Use current time as the wake-up time.
+                                    actualWakeHour = curHour
+                                    actualWakeMin = curMin
+                                }
+
+                                val actualWakeMinutesTotal = actualWakeHour * 60 + actualWakeMin
+
+                                val duration = if (actualWakeMinutesTotal < sleepMinutesTotal) {
+                                    (24 * 60) - sleepMinutesTotal + actualWakeMinutesTotal
+                                } else {
+                                    actualWakeMinutesTotal - sleepMinutesTotal
                                 }
 
                                 if (duration in 120..900) {
                                     diffMinutes = duration
                                     calculationMethod = "configured_usage_boundaries"
+                                    
+                                    val formattedWake = String.format(java.util.Locale.US, "%02d:%02d", actualWakeHour, actualWakeMin)
+                                    prefs.edit()
+                                        .putString("sleep_start_time_$todayStr", sleep)
+                                        .putString("sleep_end_time_$todayStr", formattedWake)
+                                        .apply()
                                 }
                             }
                         } catch (e: Exception) {
@@ -6831,6 +6942,12 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                 if (sleepStart > 0L && sleepEnd > 0L) {
                     editor.putLong("calculated_sleep_start_timestamp", sleepStart)
                     editor.putLong("calculated_sleep_end_timestamp", sleepEnd)
+                    
+                    val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US)
+                    val startTimeStr = sdf.format(java.util.Date(sleepStart))
+                    val endTimeStr = sdf.format(java.util.Date(sleepEnd))
+                    editor.putString("sleep_start_time_$todayStr", startTimeStr)
+                    editor.putString("sleep_end_time_$todayStr", endTimeStr)
                 }
                 editor.apply()
 

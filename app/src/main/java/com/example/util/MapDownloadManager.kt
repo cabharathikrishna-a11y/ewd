@@ -77,6 +77,13 @@ object MapDownloadManager {
     private val _downloadError = MutableStateFlow<String?>(null)
     val downloadError: StateFlow<String?> = _downloadError
 
+    private val client by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
     fun getMapFile(context: Context, zoneId: String = "southern"): File {
         val zone = zones.find { it.id == zoneId } ?: zones.first()
         val mapsDir = File(context.filesDir, "maps")
@@ -118,7 +125,6 @@ object MapDownloadManager {
 
         withContext(Dispatchers.IO) {
             val url = zone.url
-            val client = OkHttpClient()
             val request = Request.Builder().url(url).build()
 
             try {
@@ -150,15 +156,21 @@ object MapDownloadManager {
                 val inputStream: InputStream = body.byteStream()
                 val outputStream = FileOutputStream(tempFile)
 
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(65536) // Optimized buffer size for faster file writing (64KB)
                 var bytesRead: Int
                 var totalBytesRead = 0L
+                var lastUpdateTime = 0L
 
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                     outputStream.write(buffer, 0, bytesRead)
                     totalBytesRead += bytesRead
                     if (totalBytes > 0) {
-                        _downloadProgress.value = totalBytesRead.toFloat() / totalBytes.toFloat()
+                        val currentTime = System.currentTimeMillis()
+                        // Throttle state updates to at most once every 250ms to prevent blocking the main thread with Compose recompositions
+                        if (currentTime - lastUpdateTime >= 250 || totalBytesRead == totalBytes) {
+                            _downloadProgress.value = totalBytesRead.toFloat() / totalBytes.toFloat()
+                            lastUpdateTime = currentTime
+                        }
                     }
                 }
 

@@ -19,6 +19,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,6 +53,7 @@ data class CombinedHistoryItem(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     
     val familyMembers by viewModel.familyMembers.collectAsStateWithLifecycle()
@@ -84,6 +87,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
     var queryEndDay by remember { mutableIntStateOf(31) }
     var showQueryResults by remember { mutableStateOf(false) }
     var queryTypeRequested by remember { mutableStateOf("") } // "INCOME" or "EXPENSE"
+    var showFilteredHistoryDialog by remember { mutableStateOf(false) }
 
     // AI advisor state
     var aiReportText by remember { mutableStateOf("") }
@@ -687,98 +691,86 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                     )
                     Text("Select a custom date range and query cumulative breakdowns instantly with zero mathematical error.", fontSize = 11.sp, color = Color.Gray)
 
-                    // SIMPLE, ELEGANT GRID SELECTORS FOR START AND END DATE
+                    // SIMPLE, ELEGANT INTERACTIVE DATE PICKER SELECTORS FOR START AND END DATE
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("START YEAR", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                            TextField(
-                                value = queryStartYear.toString(),
-                                onValueChange = { queryStartYear = it.toIntOrNull() ?: 2026 },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                singleLine = true
-                            )
+                        // Start Date Card
+                        Card(
+                            onClick = {
+                                android.app.DatePickerDialog(
+                                    context,
+                                    { _, year, month, dayOfMonth ->
+                                        queryStartYear = year
+                                        queryStartMonth = month + 1
+                                        queryStartDay = dayOfMonth
+                                    },
+                                    queryStartYear,
+                                    queryStartMonth - 1,
+                                    queryStartDay
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("START DATE", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp), tint = WaterBlue)
+                                    Text(
+                                        text = String.format(Locale.US, "%04d-%02d-%02d", queryStartYear, queryStartMonth, queryStartDay),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
 
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("START MONTH (1-12)", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                            TextField(
-                                value = queryStartMonth.toString(),
-                                onValueChange = { queryStartMonth = (it.toIntOrNull() ?: 1).coerceIn(1, 12) },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                singleLine = true
-                            )
-                        }
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("START DAY (1-31)", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                            TextField(
-                                value = queryStartDay.toString(),
-                                onValueChange = { queryStartDay = (it.toIntOrNull() ?: 1).coerceIn(1, 31) },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                singleLine = true
-                            )
-                        }
-                    }
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("END YEAR", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                            TextField(
-                                value = queryEndYear.toString(),
-                                onValueChange = { queryEndYear = it.toIntOrNull() ?: 2026 },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                singleLine = true
-                            )
-                        }
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("END MONTH (1-12)", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                            TextField(
-                                value = queryEndMonth.toString(),
-                                onValueChange = { queryEndMonth = (it.toIntOrNull() ?: 12).coerceIn(1, 12) },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                singleLine = true
-                            )
-                        }
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("END DAY (1-31)", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
-                            TextField(
-                                value = queryEndDay.toString(),
-                                onValueChange = { queryEndDay = (it.toIntOrNull() ?: 31).coerceIn(1, 31) },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                singleLine = true
-                            )
+                        // End Date Card
+                        Card(
+                            onClick = {
+                                android.app.DatePickerDialog(
+                                    context,
+                                    { _, year, month, dayOfMonth ->
+                                        queryEndYear = year
+                                        queryEndMonth = month + 1
+                                        queryEndDay = dayOfMonth
+                                    },
+                                    queryEndYear,
+                                    queryEndMonth - 1,
+                                    queryEndDay
+                                ).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text("END DATE", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp), tint = WaterBlue)
+                                    Text(
+                                        text = String.format(Locale.US, "%04d-%02d-%02d", queryEndYear, queryEndMonth, queryEndDay),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -806,6 +798,22 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                             modifier = Modifier.weight(1f).height(38.dp)
                         ) {
                             Text("Total Incomes", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            showFilteredHistoryDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Default.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Text("View Range Transactions", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -972,6 +980,13 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
         var expenseNoteText by remember { mutableStateOf("") }
         val isSavedState = remember { mutableStateOf(false) }
 
+        val calendarNow = remember { Calendar.getInstance() }
+        val currentYearStr = remember(calendarNow) { calendarNow.get(Calendar.YEAR).toString() }
+        val currentMonthStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.MONTH) + 1) }
+        val currentDayStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.DAY_OF_MONTH)) }
+        val currentHourStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.HOUR_OF_DAY)) }
+        val currentMinuteStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.MINUTE)) }
+
         LaunchedEffect(Unit) {
             val draft = viewModel.getTransactionDraft()
             if (draft != null && draft.type == "EXPENSE") {
@@ -1001,15 +1016,29 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
             }
         }
 
-        // Date selection States
-        var expYear by remember { mutableStateOf("2026") }
-        var expMonth by remember { mutableStateOf("06") }
-        var expDay by remember { mutableStateOf("19") }
-        var expHour by remember { mutableStateOf("14") }
-        var expMinute by remember { mutableStateOf("00") }
+        // Date selection States initialized to current local time
+        var expYear by remember { mutableStateOf(currentYearStr) }
+        var expMonth by remember { mutableStateOf(currentMonthStr) }
+        var expDay by remember { mutableStateOf(currentDayStr) }
+        var expHour by remember { mutableStateOf(currentHourStr) }
+        var expMinute by remember { mutableStateOf(currentMinuteStr) }
 
         val memberAccounts = accounts.filter { it.memberId == expenseMemberId && (it.categoryType == "CURRENT_ASSETS" || it.categoryType == "CURRENT_LIABILITIES") }
         val expenseCats = categories.filter { it.type == "EXPENSE" }
+
+        // Auto-select first account if none is chosen
+        LaunchedEffect(expenseMemberId, memberAccounts) {
+            if (expenseFromAccountId == null || expenseFromAccountId !in memberAccounts.map { it.id }) {
+                expenseFromAccountId = memberAccounts.firstOrNull()?.id
+            }
+        }
+
+        // Auto-select first category if none is chosen
+        LaunchedEffect(expenseCats) {
+            if (expenseCategorySelection.isEmpty() || expenseCategorySelection !in expenseCats.map { it.name }) {
+                expenseCategorySelection = expenseCats.firstOrNull()?.name ?: ""
+            }
+        }
 
         var showUnsavedDialog by remember { mutableStateOf(false) }
 
@@ -1144,17 +1173,25 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
             confirmButton = {
                 Button(
                     onClick = {
-                        isSavedState.value = true
-                        viewModel.clearTransactionDraft()
                         val amt = expenseAmountText.toDoubleOrNull() ?: 0.0
-                        if (expenseMemberId != null && expenseFromAccountId != null && expenseCategorySelection.isNotEmpty() && amt > 0.0) {
+                        if (expenseMemberId == null) {
+                            Toast.makeText(context, "Please select a family member first.", Toast.LENGTH_LONG).show()
+                        } else if (expenseFromAccountId == null) {
+                            Toast.makeText(context, "Please select a source account first.", Toast.LENGTH_LONG).show()
+                        } else if (expenseCategorySelection.isEmpty()) {
+                            Toast.makeText(context, "Please select an expense category first.", Toast.LENGTH_LONG).show()
+                        } else if (amt <= 0.0) {
+                            Toast.makeText(context, "Please enter an expense amount greater than ₹0.00.", Toast.LENGTH_LONG).show()
+                        } else {
+                            isSavedState.value = true
+                            viewModel.clearTransactionDraft()
                             val calendar = Calendar.getInstance()
                             calendar.set(
-                                expYear.toIntOrNull() ?: 2026,
-                                (expMonth.toIntOrNull() ?: 6) - 1,
-                                expDay.toIntOrNull() ?: 19,
-                                expHour.toIntOrNull() ?: 14,
-                                expMinute.toIntOrNull() ?: 0
+                                expYear.toIntOrNull() ?: calendar.get(Calendar.YEAR),
+                                (expMonth.toIntOrNull() ?: (calendar.get(Calendar.MONTH) + 1)) - 1,
+                                expDay.toIntOrNull() ?: calendar.get(Calendar.DAY_OF_MONTH),
+                                expHour.toIntOrNull() ?: calendar.get(Calendar.HOUR_OF_DAY),
+                                expMinute.toIntOrNull() ?: calendar.get(Calendar.MINUTE)
                             )
                             viewModel.recordFinanceTransaction(
                                 memberId = expenseMemberId!!,
@@ -1167,8 +1204,9 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                                 note = expenseNoteText.trim(),
                                 timestamp = calendar.timeInMillis
                             )
+                            showRecordExpense = false
+                            Toast.makeText(context, "Expense successfully recorded!", Toast.LENGTH_SHORT).show()
                         }
-                        showRecordExpense = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
                 ) {
@@ -1193,15 +1231,36 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
         var incomeAmountText by remember { mutableStateOf("") }
         var incomeNoteText by remember { mutableStateOf("") }
 
-        // Date Picker states
-        var incYear by remember { mutableStateOf("2026") }
-        var incMonth by remember { mutableStateOf("06") }
-        var incDay by remember { mutableStateOf("19") }
-        var incHour by remember { mutableStateOf("14") }
-        var incMinute by remember { mutableStateOf("00") }
+        val calendarNow = remember { Calendar.getInstance() }
+        val currentYearStr = remember(calendarNow) { calendarNow.get(Calendar.YEAR).toString() }
+        val currentMonthStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.MONTH) + 1) }
+        val currentDayStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.DAY_OF_MONTH)) }
+        val currentHourStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.HOUR_OF_DAY)) }
+        val currentMinuteStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.MINUTE)) }
+
+        // Date Picker states initialized to current local time
+        var incYear by remember { mutableStateOf(currentYearStr) }
+        var incMonth by remember { mutableStateOf(currentMonthStr) }
+        var incDay by remember { mutableStateOf(currentDayStr) }
+        var incHour by remember { mutableStateOf(currentHourStr) }
+        var incMinute by remember { mutableStateOf(currentMinuteStr) }
 
         val memberAccounts = accounts.filter { it.memberId == incomeMemberId && (it.categoryType == "CURRENT_ASSETS" || it.categoryType == "CURRENT_LIABILITIES") }
         val incomeCats = categories.filter { it.type == "INCOME" }
+
+        // Auto-select first available account
+        LaunchedEffect(incomeMemberId, memberAccounts) {
+            if (incomeToAccountId == null || incomeToAccountId !in memberAccounts.map { it.id }) {
+                incomeToAccountId = memberAccounts.firstOrNull()?.id
+            }
+        }
+
+        // Auto-select first available income category
+        LaunchedEffect(incomeCats) {
+            if (incomeCategorySelection.isEmpty() || incomeCategorySelection !in incomeCats.map { it.name }) {
+                incomeCategorySelection = incomeCats.firstOrNull()?.name ?: ""
+            }
+        }
 
         var showUnsavedDialog by remember { mutableStateOf(false) }
 
@@ -1336,14 +1395,22 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                 Button(
                     onClick = {
                         val amt = incomeAmountText.toDoubleOrNull() ?: 0.0
-                        if (incomeMemberId != null && incomeToAccountId != null && incomeCategorySelection.isNotEmpty() && amt > 0.0) {
+                        if (incomeMemberId == null) {
+                            Toast.makeText(context, "Please select a family member first.", Toast.LENGTH_LONG).show()
+                        } else if (incomeToAccountId == null) {
+                            Toast.makeText(context, "Please select a destination account first.", Toast.LENGTH_LONG).show()
+                        } else if (incomeCategorySelection.isEmpty()) {
+                            Toast.makeText(context, "Please select an income category first.", Toast.LENGTH_LONG).show()
+                        } else if (amt <= 0.0) {
+                            Toast.makeText(context, "Please enter an income amount greater than ₹0.00.", Toast.LENGTH_LONG).show()
+                        } else {
                             val calendar = Calendar.getInstance()
                             calendar.set(
-                                incYear.toIntOrNull() ?: 2026,
-                                (incMonth.toIntOrNull() ?: 6) - 1,
-                                incDay.toIntOrNull() ?: 19,
-                                incHour.toIntOrNull() ?: 14,
-                                incMinute.toIntOrNull() ?: 0
+                                incYear.toIntOrNull() ?: calendar.get(Calendar.YEAR),
+                                (incMonth.toIntOrNull() ?: (calendar.get(Calendar.MONTH) + 1)) - 1,
+                                incDay.toIntOrNull() ?: calendar.get(Calendar.DAY_OF_MONTH),
+                                incHour.toIntOrNull() ?: calendar.get(Calendar.HOUR_OF_DAY),
+                                incMinute.toIntOrNull() ?: calendar.get(Calendar.MINUTE)
                             )
                             viewModel.recordFinanceTransaction(
                                 memberId = incomeMemberId!!,
@@ -1356,8 +1423,9 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                                 note = incomeNoteText.trim(),
                                 timestamp = calendar.timeInMillis
                             )
+                            showRecordIncome = false
+                            Toast.makeText(context, "Income successfully recorded!", Toast.LENGTH_SHORT).show()
                         }
-                        showRecordIncome = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
                 ) {
@@ -1382,14 +1450,31 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
         var transferAmountText by remember { mutableStateOf("") }
         var transferNoteText by remember { mutableStateOf("") }
 
+        val calendarNow = remember { Calendar.getInstance() }
+        val currentYearStr = remember(calendarNow) { calendarNow.get(Calendar.YEAR).toString() }
+        val currentMonthStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.MONTH) + 1) }
+        val currentDayStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.DAY_OF_MONTH)) }
+        val currentHourStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.HOUR_OF_DAY)) }
+        val currentMinuteStr = remember(calendarNow) { String.format("%02d", calendarNow.get(Calendar.MINUTE)) }
+
         // Date selection
-        var trsfYear by remember { mutableStateOf("2026") }
-        var trsfMonth by remember { mutableStateOf("06") }
-        var trsfDay by remember { mutableStateOf("19") }
-        var trsfHour by remember { mutableStateOf("14") }
-        var trsfMinute by remember { mutableStateOf("00") }
+        var trsfYear by remember { mutableStateOf(currentYearStr) }
+        var trsfMonth by remember { mutableStateOf(currentMonthStr) }
+        var trsfDay by remember { mutableStateOf(currentDayStr) }
+        var trsfHour by remember { mutableStateOf(currentHourStr) }
+        var trsfMinute by remember { mutableStateOf(currentMinuteStr) }
 
         val memberAccounts = accounts.filter { it.memberId == transferMemberId && (it.categoryType == "CURRENT_ASSETS" || it.categoryType == "CURRENT_LIABILITIES") }
+
+        // Auto-select source and destination accounts
+        LaunchedEffect(transferMemberId, memberAccounts) {
+            if (transferFromAccountId == null || transferFromAccountId !in memberAccounts.map { it.id }) {
+                transferFromAccountId = memberAccounts.firstOrNull()?.id
+            }
+            if (transferToAccountId == null || transferToAccountId !in memberAccounts.map { it.id }) {
+                transferToAccountId = memberAccounts.getOrNull(1)?.id ?: memberAccounts.firstOrNull()?.id
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showRecordTransfer = false },
@@ -1491,14 +1576,24 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                 Button(
                     onClick = {
                         val amt = transferAmountText.toDoubleOrNull() ?: 0.0
-                        if (transferMemberId != null && transferFromAccountId != null && transferToAccountId != null && amt > 0.0) {
+                        if (transferMemberId == null) {
+                            Toast.makeText(context, "Please select a family member first.", Toast.LENGTH_LONG).show()
+                        } else if (transferFromAccountId == null) {
+                            Toast.makeText(context, "Please select a source account first.", Toast.LENGTH_LONG).show()
+                        } else if (transferToAccountId == null) {
+                            Toast.makeText(context, "Please select a destination account first.", Toast.LENGTH_LONG).show()
+                        } else if (transferFromAccountId == transferToAccountId) {
+                            Toast.makeText(context, "Source and destination accounts must be different.", Toast.LENGTH_LONG).show()
+                        } else if (amt <= 0.0) {
+                            Toast.makeText(context, "Please enter a transfer amount greater than ₹0.00.", Toast.LENGTH_LONG).show()
+                        } else {
                             val calendar = Calendar.getInstance()
                             calendar.set(
-                                trsfYear.toIntOrNull() ?: 2026,
-                                (trsfMonth.toIntOrNull() ?: 6) - 1,
-                                trsfDay.toIntOrNull() ?: 19,
-                                trsfHour.toIntOrNull() ?: 14,
-                                trsfMinute.toIntOrNull() ?: 0
+                                trsfYear.toIntOrNull() ?: calendar.get(Calendar.YEAR),
+                                (trsfMonth.toIntOrNull() ?: (calendar.get(Calendar.MONTH) + 1)) - 1,
+                                trsfDay.toIntOrNull() ?: calendar.get(Calendar.DAY_OF_MONTH),
+                                trsfHour.toIntOrNull() ?: calendar.get(Calendar.HOUR_OF_DAY),
+                                trsfMinute.toIntOrNull() ?: calendar.get(Calendar.MINUTE)
                             )
                             viewModel.recordFinanceTransaction(
                                 memberId = transferMemberId!!,
@@ -1511,8 +1606,9 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                                 note = transferNoteText.trim(),
                                 timestamp = calendar.timeInMillis
                             )
+                            showRecordTransfer = false
+                            Toast.makeText(context, "Transfer successfully executed!", Toast.LENGTH_SHORT).show()
                         }
-                        showRecordTransfer = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black)
                 ) {
@@ -1684,6 +1780,141 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                                         if (item.note.isNotEmpty()) {
                                             Text(
                                                 text = "Note: ${item.note}",
+                                                fontSize = 10.sp,
+                                                color = Color.LightGray.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (showFilteredHistoryDialog) {
+        val sCal = Calendar.getInstance().apply {
+            set(queryStartYear, queryStartMonth - 1, queryStartDay, 0, 0, 0)
+        }
+        val eCal = Calendar.getInstance().apply {
+            set(queryEndYear, queryEndMonth - 1, queryEndDay, 23, 59, 59)
+        }
+        val startTs = sCal.timeInMillis
+        val endTs = eCal.timeInMillis
+
+        val filteredTxs = remember(txs, startTs, endTs, selectedMemberId) {
+            txs.filter { t ->
+                t.timestamp in startTs..endTs &&
+                (selectedMemberId == null || t.memberId == selectedMemberId)
+            }.sortedByDescending { it.timestamp }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showFilteredHistoryDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "RANGE TRANSACTION HISTORY",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = WaterBlue
+                    )
+                    IconButton(onClick = { showFilteredHistoryDialog = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(450.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val dateFmt = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
+                    Text(
+                        text = "Transactions logged between ${dateFmt.format(sCal.time)} and ${dateFmt.format(eCal.time)}.",
+                        fontSize = 11.sp,
+                        color = Color.LightGray
+                    )
+                    
+                    if (filteredTxs.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No transactions logged in this range.", color = Color.Gray, fontSize = 13.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(filteredTxs, key = { it.id }) { t ->
+                                val dateStr = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()).format(Date(t.timestamp))
+                                val memberName = familyMembers.find { it.id == t.memberId }?.name ?: "Unknown"
+                                val fromAccName = accounts.find { it.id == t.fromAccountId }?.name ?: t.fromCategory ?: "None"
+                                val toAccName = accounts.find { it.id == t.toAccountId }?.name ?: t.toCategory ?: "None"
+
+                                val (title, isAssetImpact) = when (t.type) {
+                                    "EXPENSE" -> "Expense: $fromAccName ➔ $toAccName" to false
+                                    "INCOME" -> "Income: $fromAccName ➔ $toAccName" to true
+                                    else -> "Transfer: $fromAccName ➔ $toAccName" to true
+                                }
+
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = SurfaceCard)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = title,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Text(
+                                                text = if (isAssetImpact) "+₹${String.format("%,.2f", t.amount)}" else "-₹${String.format("%,.2f", t.amount)}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isAssetImpact) SuccessGreen else AlertRed
+                                            )
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Member: $memberName | Type: ${t.type}",
+                                                fontSize = 10.sp,
+                                                color = Color.Gray
+                                            )
+                                            Text(
+                                                text = dateStr,
+                                                fontSize = 10.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                        if (!t.note.isNullOrBlank()) {
+                                            Text(
+                                                text = "Note: ${t.note}",
                                                 fontSize = 10.sp,
                                                 color = Color.LightGray.copy(alpha = 0.8f)
                                             )

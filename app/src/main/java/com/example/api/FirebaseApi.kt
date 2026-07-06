@@ -49,6 +49,11 @@ interface FirebaseApi {
     @GET("users.json")
     suspend fun getUsers(): retrofit2.Response<Map<String, UserRemote>?>
 
+    @GET("users/{username}.json")
+    suspend fun getUser(
+        @Path("username") username: String
+    ): retrofit2.Response<UserRemote?>
+
     @PUT("users/{username}.json")
     suspend fun putUser(
         @Path("username") username: String,
@@ -178,6 +183,13 @@ class InterceptingFirebaseApi(
         return delegate.getUsers()
     }
 
+    override suspend fun getUser(username: String): retrofit2.Response<UserRemote?> {
+        if (isTester() || username == "tester_mode_user") {
+            return retrofit2.Response.success(UserRemote(password = "tester"))
+        }
+        return delegate.getUser(username)
+    }
+
     private fun getAppVersionString(): String {
         val ctx = contextProvider() ?: return "Unknown"
         return try {
@@ -195,18 +207,7 @@ class InterceptingFirebaseApi(
             return user
         }
         val userWithVersion = user.copy(appVersion = getAppVersionString())
-        val result = delegate.putUser(username, userWithVersion)
-        try {
-            val otherUsers = (FirebaseRepository.getUsers().keys + listOf("madhavan", "shalini", "subash"))
-                .filter { it.isNotEmpty() && it != username && it != "admin" }
-                .distinct()
-            for (other in otherUsers) {
-                delegate.putFriendFocusState(other, username, userWithVersion)
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("InterceptingFirebase", "Failed to fan out user focus state: ${e.message}", e)
-        }
-        return result
+        return delegate.putUser(username, userWithVersion)
     }
 
     override suspend fun getFriendsFocusStates(username: String): retrofit2.Response<Map<String, UserRemote>?> {

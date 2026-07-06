@@ -236,8 +236,8 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         ) { activePage = 8 }
                         HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
                         SettingsRowItem(
-                            title = "18. FITNESS SYNC & TRENDS",
-                            subtitle = "Google Fit synchronization, activity graphs & step details tracker",
+                            title = "18. GOOGLE FIT SYNC",
+                            subtitle = "Synchronize activity data directly with your Google Fit account",
                             icon = Icons.Default.DirectionsWalk,
                             iconBgColor = Color(0xFFFFA726)
                         ) { activePage = 20 }

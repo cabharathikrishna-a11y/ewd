@@ -30,6 +30,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Habit
+import com.example.data.Task
 import com.example.ui.AppViewModel
 import com.example.ui.theme.Charcoal
 import com.example.ui.theme.SurfaceCard
@@ -79,13 +80,24 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
     // Today format helper
     val todayDateStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Active Tab State ("Today" is open by default)
+    var activeTab by remember { mutableStateOf("Today") }
+
+    val allTasks: List<Task> by viewModel.tasks.collectAsState(initial = emptyList())
+    val upcomingTasksWithDueDates = remember(allTasks, todayDateStr) {
+        allTasks.filter { task: Task ->
+            !task.isCompleted && task.dueDateString.isNotBlank() && task.dueDateString >= todayDateStr
+        }.sortedBy { it.dueDateString }
+    }
 
     // Filter habits scheduled for *today* based on their frequency profile
     val calendar = Calendar.getInstance()
     val currentDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK)
     val currentDayOfMonth = calendar.get(Calendar.DAY_OF_MONTH)
 
-    val displayedHabits = allDbHabits.filter { habit ->
+    val displayedHabitsToday = allDbHabits.filter { habit ->
         val listMatch = selectedListName.equals("all", ignoreCase = true) || habit.listCategory == selectedListName
         val timeSegMatch = selectedTimeOfDayFilter == "All" || habit.timeOfDay == selectedTimeOfDayFilter
         
@@ -99,6 +111,14 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
         listMatch && timeSegMatch && scheduledToday
     }
+
+    val displayedHabitsAll = allDbHabits.filter { habit ->
+        val listMatch = selectedListName.equals("all", ignoreCase = true) || habit.listCategory == selectedListName
+        val timeSegMatch = selectedTimeOfDayFilter == "All" || habit.timeOfDay == selectedTimeOfDayFilter
+        listMatch && timeSegMatch
+    }
+
+    val displayedHabits = if (activeTab == "Today") displayedHabitsToday else displayedHabitsAll
 
     Column(modifier = modifier.fillMaxSize().padding(if (isTablet) 16.dp else 4.dp)) {
         // Sub-Header panel replacing secondary titles
@@ -129,6 +149,52 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
             Spacer(modifier = Modifier.weight(1f))
         }
 
+        // Premium Custom Tab Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF161618))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (activeTab == "Today") WaterBlue else Color.Transparent)
+                    .clickable { activeTab = "Today" }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "TODAY'S HABITS",
+                    color = if (activeTab == "Today") Color.Black else Color.Gray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (activeTab == "All") WaterBlue else Color.Transparent)
+                    .clickable { activeTab = "All" }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "ALL HABITS & UPCOMING",
+                    color = if (activeTab == "All") Color.Black else Color.Gray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+            }
+        }
+
         Box(
             modifier = Modifier.fillMaxWidth().weight(1f)
         ) {
@@ -149,7 +215,7 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "ACTIVE TODAY",
+                            text = if (activeTab == "Today") "ACTIVE TODAY" else "ALL HABITS",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.Gray
@@ -182,108 +248,31 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         }
                     }
 
-                    if (displayedHabits.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize().weight(1f),
-                            contentAlignment = Alignment.Center
+                    Column(modifier = Modifier.weight(1f)) {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(24.dp))
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "No active scheduled habits for today.",
-                                    color = Color.Gray,
-                                    fontSize = 12.sp
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Button(
-                                    onClick = {
-                                        isEditMode = false
-                                        curHabitName = ""
-                                        curTimeOfDay = "Morning"
-                                        curTargetCount = "1"
-                                        curFrequency = "DAILY"
-                                        curWeeklyDay = 2
-                                        curMonthlyStartDate = "1"
-                                        curMonthlyEndDate = "30"
-                                        curScheduledTime = "08:00"
-                                        curIsReminderEnabled = false
-                                        showCreateEditDialog = true
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Habit Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    } else {
-                        Column(modifier = Modifier.weight(1f)) {
-                            LazyColumn(
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.weight(1f)
-                             ) {
+                            if (displayedHabits.isEmpty()) {
                                 item {
-                                    val bronzeCount = allDbHabits.count { it.streakCount >= 7 }
-                                    val silverCount = allDbHabits.count { it.streakCount >= 30 }
-                                    val goldCount = allDbHabits.count { it.streakCount >= 100 }
-                                    
-                                    Row(
+                                    Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFF1B1B1D))
-                                            .padding(12.dp)
-                                            .padding(bottom = 2.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .padding(vertical = 32.dp),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(CircleShape)
-                                                .background(WaterBlue.copy(alpha = 0.15f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.EmojiEvents,
-                                                contentDescription = "Achievements earned",
-                                                tint = WaterBlue,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(24.dp))
+                                            Spacer(modifier = Modifier.height(8.dp))
                                             Text(
-                                                "STREAK MILESTONES ACHIEVED",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.ExtraBold,
+                                                text = if (activeTab == "Today") "No active scheduled habits for today." else "No habits found.",
                                                 color = Color.Gray,
-                                                letterSpacing = 0.5.sp
+                                                fontSize = 12.sp
                                             )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFCD7F32), modifier = Modifier.size(12.dp))
-                                                    Text("7d: $bronzeCount", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFC0C0C0), modifier = Modifier.size(12.dp))
-                                                    Text("30d: $silverCount", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                                    Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFD700), modifier = Modifier.size(12.dp))
-                                                    Text("100d: $goldCount", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
                                         }
                                     }
                                 }
-
+                            } else {
                                 items(displayedHabits) { habit ->
                                     val progressCount = allCompletions.count { it.habitId == habit.id && it.dateString == todayDateStr }
                                     val isCompleted = progressCount >= habit.targetCount
@@ -294,7 +283,13 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(SurfaceCard)
                                             .combinedClickable(
-                                                onClick = { countLogTarget = habit },
+                                                onClick = {
+                                                    if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
+                                                        android.widget.Toast.makeText(context, "Weekly habits can only be updated on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        countLogTarget = habit
+                                                    }
+                                                },
                                                 onLongClick = { showLongPressOptionsForHabit = habit }
                                             )
                                             .padding(12.dp),
@@ -421,7 +416,13 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(6.dp))
                                                     .background(WaterBlue.copy(alpha = 0.15f))
-                                                    .clickable { countLogTarget = habit }
+                                                    .clickable {
+                                                        if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
+                                                            android.widget.Toast.makeText(context, "Weekly habits can only be updated on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            countLogTarget = habit
+                                                        }
+                                                    }
                                                     .padding(horizontal = 8.dp, vertical = 4.dp)
                                             ) {
                                                 Text(
@@ -435,11 +436,15 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                             // Direct checkmark toggle
                                             IconButton(
                                                 onClick = {
-                                                    if (isCompleted) {
-                                                        allCompletions.filter { it.habitId == habit.id && it.dateString == todayDateStr }
-                                                            .forEach { viewModel.toggleHabit(habit, todayDateStr) }
+                                                    if (habit.frequency.uppercase() == "WEEKLY" && habit.weeklyDay != currentDayOfWeek) {
+                                                        android.widget.Toast.makeText(context, "Weekly habits can only be completed on their designated day!", android.widget.Toast.LENGTH_SHORT).show()
                                                     } else {
-                                                        viewModel.toggleHabit(habit, todayDateStr)
+                                                        if (isCompleted) {
+                                                            allCompletions.filter { it.habitId == habit.id && it.dateString == todayDateStr }
+                                                                .forEach { viewModel.toggleHabit(habit, todayDateStr) }
+                                                        } else {
+                                                            viewModel.toggleHabit(habit, todayDateStr)
+                                                        }
                                                     }
                                                 },
                                                 modifier = Modifier.size(32.dp)
@@ -456,30 +461,116 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            // If All tab, append Upcoming Tasks
+                            if (activeTab == "All") {
+                                item {
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Event,
+                                            contentDescription = null,
+                                            tint = WaterBlue,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "UPCOMING TASKS WITH DUE DATES",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.Gray,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+                                }
 
-                            Button(
-                                onClick = {
-                                    isEditMode = false
-                                    curHabitName = ""
-                                    curTimeOfDay = "Morning"
-                                    curTargetCount = "1"
-                                    curFrequency = "DAILY"
-                                    curWeeklyDay = 2
-                                    curMonthlyStartDate = "1"
-                                    curMonthlyEndDate = "30"
-                                    curScheduledTime = "08:00"
-                                    curIsReminderEnabled = false
-                                    showCreateEditDialog = true
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth().testTag("add_habit_btn")
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add New Habit", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                if (upcomingTasksWithDueDates.isEmpty()) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("No upcoming tasks with due dates found.", color = Color.Gray, fontSize = 12.sp)
+                                        }
+                                    }
+                                } else {
+                                    items(upcomingTasksWithDueDates) { task ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(SurfaceCard)
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = task.title,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                    fontSize = 14.sp
+                                                )
+                                                if (task.description.isNotBlank()) {
+                                                    Text(
+                                                        text = task.description,
+                                                        color = Color.Gray,
+                                                        fontSize = 12.sp,
+                                                        maxLines = 1,
+                                                        modifier = Modifier.padding(top = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            // Display Due Date Badge
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color(0xFFFFB300).copy(alpha = 0.15f))
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    Icon(Icons.Default.CalendarToday, contentDescription = null, tint = Color(0xFFFFB300), modifier = Modifier.size(10.dp))
+                                                    Text(
+                                                        text = task.dueDateString,
+                                                        color = Color(0xFFFFB300),
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = {
+                                isEditMode = false
+                                curHabitName = ""
+                                curTimeOfDay = "Morning"
+                                curTargetCount = "1"
+                                curFrequency = "DAILY"
+                                curWeeklyDay = 2
+                                curMonthlyStartDate = "1"
+                                curMonthlyEndDate = "30"
+                                curScheduledTime = "08:00"
+                                curIsReminderEnabled = false
+                                showCreateEditDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("add_habit_btn")
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add New Habit", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

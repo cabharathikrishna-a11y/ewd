@@ -3,8 +3,51 @@ package com.example.data
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.NonCancellable
+import androidx.room.InvalidationTracker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
-class LocalRepository(val db: AppDatabase) {
+class LocalRepository(val db: AppDatabase, val context: android.content.Context) {
+
+    private val backupScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var backupJob: Job? = null
+
+    private fun triggerAutoBackup() {
+        val appContext = context.applicationContext
+        if (com.example.util.GoogleDriveSyncManager.hasDrivePermission(appContext)) {
+            backupJob?.cancel()
+            backupJob = backupScope.launch {
+                delay(5000L) // Debounce by 5 seconds
+                try {
+                    android.util.Log.d("LocalRepository", "Auto-backing up to Google Drive...")
+                    com.example.util.GoogleDriveSyncManager.backupAllAppData(appContext, db, {})
+                } catch (e: Exception) {
+                    android.util.Log.e("LocalRepository", "Auto-backup failed", e)
+                }
+            }
+        }
+    }
+
+    init {
+        val observer = object : InvalidationTracker.Observer(
+            arrayOf(
+                "tasks", "habits", "habit_completions", "journal_entries", "ledger_entries",
+                "deadlines", "financial_goals", "contacts", "app_files", "focus_records",
+                "keep_notes", "custom_lists", "family_members", "financial_accounts",
+                "financial_logs", "finance_transactions", "finance_categories", "health_records"
+            )
+        ) {
+            override fun onInvalidated(tables: Set<String>) {
+                android.util.Log.d("LocalRepository", "Tables invalidated: $tables, checking auto-backup...")
+                triggerAutoBackup()
+            }
+        }
+        db.invalidationTracker.addObserver(observer)
+    }
 
     private val taskDao = db.taskDao()
     private val habitDao = db.habitDao()

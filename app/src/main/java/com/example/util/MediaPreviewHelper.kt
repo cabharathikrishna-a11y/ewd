@@ -1509,7 +1509,7 @@ fun PhotoEditorDialog(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     Button(
-                                        onClick = { if (doodleStrokes.isNotEmpty()) doodleStrokes.removeLast() },
+                                        onClick = { if (doodleStrokes.isNotEmpty()) doodleStrokes.removeAt(doodleStrokes.lastIndex) },
                                         modifier = Modifier.weight(1f).height(36.dp),
                                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f))
                                     ) {

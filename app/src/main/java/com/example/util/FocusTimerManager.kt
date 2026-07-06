@@ -140,10 +140,9 @@ object FocusTimerManager {
 
                     try {
                         addSystemLog(context, "Firebase Sync Started", "FIREBASE_SYNC", "TimerActive=$isTimerActive, StopwatchActive=$isSwActive, Focus=$isFocus, CumSecs=$cumSecs, SwSecs=$swSecs")
-                        val response = com.example.api.FirebaseClient.api.getUsers()
+                        val response = com.example.api.FirebaseClient.api.getUser(currentUsername)
                         if (response.isSuccessful) {
-                            val users = response.body()
-                            val baseUser = users?.get(currentUsername)
+                            val baseUser = response.body()
                             if (baseUser != null) {
                                 val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
                                 val todayStr = sdf.format(java.util.Date())
@@ -211,10 +210,9 @@ object FocusTimerManager {
         scope.launch(Dispatchers.IO) {
             try {
                 addSystemLog(context, "Alignment Querying", "FIREBASE_SYNC", "Fetching online records to match with local database...")
-                val response = com.example.api.FirebaseClient.api.getUsers()
+                val response = com.example.api.FirebaseClient.api.getUser(currentUsername)
                 if (response.isSuccessful) {
-                    val users = response.body()
-                    val baseUser = users?.get(currentUsername)
+                    val baseUser = response.body()
                     if (baseUser != null) {
                         val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
                         val todayStr = sdf.format(java.util.Date())
@@ -613,6 +611,10 @@ object FocusTimerManager {
 
     fun setTabFocusTimerSelected(value: Boolean) {
         _isTabFocusTimerSelected.value = value
+        appContext?.let { ctx ->
+            val prefs = ctx.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("timer_is_tab_focus_selected", value).apply()
+        }
     }
 
     fun setStopwatchBreakDurationMinutes(value: Int) {
@@ -701,6 +703,7 @@ object FocusTimerManager {
             .putString("timer_attached_tag", attachedTag.value)
             .putLong("timer_last_active_timestamp", StableTime.currentTimeMillis())
             .putInt("timer_seconds_left", timerSecondsLeft.value)
+            .putBoolean("timer_is_tab_focus_selected", isTabFocusTimerSelected.value)
             .apply()
     }
 
@@ -731,6 +734,7 @@ object FocusTimerManager {
         lastResumeElapsedRealtime = prefs.getSafeLong("last_resume_time_ms", -1L).let { if (it == -1L) null else it }
         _accumulatedSessionTimeMs.value = prefs.getSafeLong("accumulated_time_ms", 0L)
         _isFocusPhase.value = prefs.getBoolean("timer_is_focus_phase", true)
+        _isTabFocusTimerSelected.value = prefs.getBoolean("timer_is_tab_focus_selected", true)
     }
 
     fun recoverAndResumeActiveSession(context: Context) {
@@ -743,6 +747,8 @@ object FocusTimerManager {
         val savedWasStartedFromStopwatch = prefs.getBoolean("timer_was_started_from_stopwatch", false)
         val savedAttachedTaskId = prefs.getInt("timer_attached_task_id", -1)
         _attachedTag.value = prefs.getString("timer_attached_tag", "") ?: ""
+        val savedIsTabFocusTimerSelected = prefs.getBoolean("timer_is_tab_focus_selected", true)
+        _isTabFocusTimerSelected.value = savedIsTabFocusTimerSelected
         
         val savedAccumulated = prefs.getSafeLong("accumulated_time_ms", 0L)
         val savedLastResume = prefs.getSafeLong("last_resume_time_ms", -1L)
@@ -1182,6 +1188,7 @@ object FocusTimerManager {
 
     fun startTimer(context: Context, stopActiveAlarm: Boolean = true) {
         init(context)
+        setTabFocusTimerSelected(true)
         updateLocalInteractionTimestamp()
         if (stopActiveAlarm) {
             stopAlarm()
@@ -1348,7 +1355,7 @@ object FocusTimerManager {
             if (_wasStartedFromStopwatch.value) {
                 _isFocusPhase.value = true
                 _wasStartedFromStopwatch.value = false
-                _isTabFocusTimerSelected.value = false
+                setTabFocusTimerSelected(false)
                 val prefs = appContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 prefs.edit().putBoolean("was_started_from_stopwatch", false).apply()
 
@@ -1471,10 +1478,9 @@ object FocusTimerManager {
                 withContext(NonCancellable) {
                     firebaseSyncMutex.withLock {
                         try {
-                            val response = com.example.api.FirebaseClient.api.getUsers()
+                            val response = com.example.api.FirebaseClient.api.getUser(currentUsername)
                             if (response.isSuccessful) {
-                                val users = response.body()
-                                val baseUser = users?.get(currentUsername)
+                                val baseUser = response.body()
                                 if (baseUser != null) {
                                     val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
                                     val todayStr = sdf.format(java.util.Date())
@@ -1623,6 +1629,7 @@ object FocusTimerManager {
 
     fun startStopwatch(context: Context, stopActiveAlarm: Boolean = true) {
         init(context)
+        setTabFocusTimerSelected(false)
         if (stopActiveAlarm) {
             stopAlarm()
         }
@@ -1640,7 +1647,7 @@ object FocusTimerManager {
             _isTimerRunning.value = false
             _isFocusPhase.value = true
             _wasStartedFromStopwatch.value = false
-            _isTabFocusTimerSelected.value = false
+            setTabFocusTimerSelected(false)
             val prefs = appContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             prefs.edit().putBoolean("was_started_from_stopwatch", false).apply()
             
@@ -1900,7 +1907,7 @@ object FocusTimerManager {
             val endBtn = TextView(context).apply {
                 text = "■"
                 setTextColor(0xFFFF5252.toInt())
-                textSize = textSizeVal - 2
+                textSize = textSizeVal + 8f
                 gravity = Gravity.CENTER
                 setPadding(dpToPx(context, 14f), dpToPx(context, padV), dpToPx(context, 6f), dpToPx(context, padV))
                 setOnClickListener {
@@ -1954,7 +1961,7 @@ object FocusTimerManager {
                 val isRunning = isTimerRunning.value || isStopwatchActive.value
                 text = if (isRunning) "❙❙" else "▶"
                 setTextColor(0xFF03A9F4.toInt())
-                textSize = textSizeVal - 2
+                textSize = textSizeVal + 8f
                 gravity = Gravity.CENTER
                 setPadding(dpToPx(context, 6f), dpToPx(context, padV), dpToPx(context, 14f), dpToPx(context, padV))
                 setOnClickListener {
@@ -1963,20 +1970,11 @@ object FocusTimerManager {
                     Toast.makeText(context, "Command Executed: [$actionName] - Hiding Controls", Toast.LENGTH_SHORT).show()
                     hideOverlayControls(context)
 
-                    val isSwActiveOrHasTime = stopwatchSeconds.value > 0 || isStopwatchActive.value
-                    val isTimerActiveOrHasTime = (timerSecondsLeft.value < timerDurationMinutes.value * 60) || isTimerRunning.value
-
-                    if (isSwActiveOrHasTime) {
+                    if (isRunningBefore) {
                         if (isStopwatchActive.value) {
                             pauseStopwatch(context)
-                        } else {
-                            startStopwatch(context)
-                        }
-                    } else if (isTimerActiveOrHasTime) {
-                        if (isTimerRunning.value) {
+                        } else if (isTimerRunning.value) {
                             pauseTimer(context)
-                        } else {
-                            startTimer(context)
                         }
                     } else {
                         if (isTabFocusTimerSelected.value) {
@@ -2465,8 +2463,7 @@ object FocusTimerManager {
             } else if (wasStartedFromStopwatch.value) {
                 timerSecondsLeft.value // Break countdown
             } else {
-                // Default to whichever tab is selected or has active seconds
-                if (stopwatchSeconds.value > 0 && !isTabFocusTimerSelected.value) stopwatchSeconds.value else timerSecondsLeft.value
+                if (!isTabFocusTimerSelected.value) stopwatchSeconds.value else timerSecondsLeft.value
             }
             tvTimerText?.let { textView ->
                 textView.text = formatTime(displaySeconds)

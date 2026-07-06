@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -60,12 +61,22 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val googleFitSyncStatus by viewModel.googleFitSyncStatus.collectAsStateWithLifecycle()
     val allRecords by viewModel.healthRecordsList.collectAsStateWithLifecycle()
 
+    val defaultStepGoal by viewModel.defaultStepGoal.collectAsStateWithLifecycle()
+    val defaultSleepGoalMinutes by viewModel.defaultSleepGoalMinutes.collectAsStateWithLifecycle()
+    val defaultWaterGoalMl by viewModel.defaultWaterGoalMl.collectAsStateWithLifecycle()
+
     // Ensure we have a non-null record for the selected date
-    val record = rawRecord ?: HealthRecord(dateString = selectedDate)
+    val record = rawRecord ?: HealthRecord(
+        dateString = selectedDate,
+        stepGoal = defaultStepGoal,
+        sleepGoalMinutes = defaultSleepGoalMinutes,
+        waterGoalMl = defaultWaterGoalMl
+    )
 
     var showStepsDetails by remember { mutableStateOf(false) }
     var showSleepDetails by remember { mutableStateOf(false) }
     var showFoodDetails by remember { mutableStateOf(false) }
+    var showWaterDetails by remember { mutableStateOf(false) }
 
     // Dialog state controllers
     var showManualLogDialog by remember { mutableStateOf(false) }
@@ -139,6 +150,12 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 record = record,
                 onBack = { showFoodDetails = false }
             )
+        } else if (showWaterDetails) {
+            WaterDetailsPage(
+                viewModel = viewModel,
+                record = record,
+                onBack = { showWaterDetails = false }
+            )
         } else {
             Column(
                 modifier = Modifier
@@ -154,13 +171,6 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text(
-                        text = "GOOGLE HEALTH",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = WaterBlue,
-                        letterSpacing = 2.sp
-                    )
                     Text(
                         text = "Fitness & Wellness",
                         fontSize = 24.sp,
@@ -317,7 +327,8 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                     },
                     onStepsClick = { showStepsDetails = true },
                     onSleepClick = { showSleepDetails = true },
-                    onFoodClick = { showFoodDetails = true }
+                    onFoodClick = { showFoodDetails = true },
+                    onWaterClick = { showWaterDetails = true }
                 )
             }
         }
@@ -580,6 +591,17 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     val finalMins = hr * 60 + min
                                     val finalGoalMins = gHr * 60 + gMin
 
+                                    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                                    val fallbackEndHour = 7
+                                    val fallbackEndMin = 0
+                                    val startTotalMinutes = (fallbackEndHour * 60 - finalMins + 1440) % 1440
+                                    val fallbackStartHour = startTotalMinutes / 60
+                                    val fallbackStartMin = startTotalMinutes % 60
+                                    prefs.edit()
+                                        .putString("sleep_start_time_${record.dateString}", String.format(Locale.US, "%02d:%02d", fallbackStartHour, fallbackStartMin))
+                                        .putString("sleep_end_time_${record.dateString}", String.format(Locale.US, "%02d:%02d", fallbackEndHour, fallbackEndMin))
+                                        .apply()
+
                                     viewModel.updateHealthMetric(
                                         sleepMinutes = finalMins,
                                         sleepGoalMinutes = finalGoalMins
@@ -628,7 +650,8 @@ fun SummaryTab(
     onWaterIncrement: (Int) -> Unit,
     onStepsClick: () -> Unit,
     onSleepClick: () -> Unit,
-    onFoodClick: () -> Unit
+    onFoodClick: () -> Unit,
+    onWaterClick: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier
@@ -644,68 +667,13 @@ fun SummaryTab(
             }
         }
 
-        // Clickable Steps Block
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF13141F)),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onStepsClick() }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(WaterBlue.copy(alpha = 0.12f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DirectionsWalk,
-                                contentDescription = null,
-                                tint = WaterBlue,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Steps Details Tracker",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "Log manual stats, target goals, & permissions",
-                                color = Color.Gray,
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = "Navigate to steps",
-                        tint = Color.Gray,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
         // Action Quick metrics Logger
         item {
             QuickLogIntakeCard(
                 viewModel = viewModel,
                 record = record,
-                onWaterIncrement = onWaterIncrement
+                onWaterIncrement = onWaterIncrement,
+                onWaterClick = onWaterClick
             )
         }
 
@@ -732,44 +700,6 @@ fun SummaryTab(
                         record = record,
                         onClick = onFoodClick
                     )
-                }
-            }
-        }
-
-        // Accelerometer Sensor Diagnostics Banner
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.04f)),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Accessibility,
-                        contentDescription = "Sensor Info",
-                        tint = SuccessGreen,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Live Pedestrian Motion Active",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Device's internal accelerometer sensor listener is active. Walk or shake to count steps.",
-                            color = Color.Gray,
-                            fontSize = 10.sp
-                        )
-                    }
                 }
             }
         }
@@ -927,7 +857,8 @@ fun FitnessActivityRingCard(record: HealthRecord) {
 fun QuickLogIntakeCard(
     viewModel: AppViewModel,
     record: HealthRecord,
-    onWaterIncrement: (Int) -> Unit
+    onWaterIncrement: (Int) -> Unit,
+    onWaterClick: () -> Unit
 ) {
     val waterReminderEnabled by viewModel.waterReminderEnabled.collectAsStateWithLifecycle()
     val waterReminderIntervalMins by viewModel.waterReminderIntervalMins.collectAsStateWithLifecycle()
@@ -940,7 +871,9 @@ fun QuickLogIntakeCard(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF13141F)),
         shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onWaterClick() }
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -1742,43 +1675,36 @@ fun StepsDetailsPage(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val selectedDate by viewModel.selectedHealthDate.collectAsStateWithLifecycle()
+
     var inputSteps by remember { mutableStateOf(record.steps.toString()) }
     var inputGoal by remember { mutableStateOf(record.stepGoal.toString()) }
     var inputCalories by remember { mutableStateOf(record.caloriesBurned.toString()) }
     var inputActiveMinutes by remember { mutableStateOf(record.activeMinutes.toString()) }
 
+    LaunchedEffect(record.dateString, record.steps, record.stepGoal, record.caloriesBurned, record.activeMinutes) {
+        inputSteps = record.steps.toString()
+        inputGoal = record.stepGoal.toString()
+        inputCalories = record.caloriesBurned.toString()
+        inputActiveMinutes = record.activeMinutes.toString()
+    }
+
+    // Format display for selected date
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val displayDateText = try {
+        val parsed = sdf.parse(selectedDate)
+        if (parsed != null) {
+            val sdfDisplay = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.US)
+            sdfDisplay.format(parsed)
+        } else {
+            selectedDate
+        }
+    } catch (e: Exception) {
+        selectedDate
+    }
+
     // Distance calculation: steps * 0.00075 km
     val computedDistance = (record.steps * 0.00075f)
-
-    // Activity Recognition Permission State
-    val activityRecognitionPermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-        android.Manifest.permission.ACTIVITY_RECOGNITION
-    } else {
-        null
-    }
-
-    var isPermissionGranted by remember {
-        mutableStateOf(
-            if (activityRecognitionPermission != null) {
-                androidx.core.content.ContextCompat.checkSelfPermission(
-                    context, activityRecognitionPermission
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else {
-                true
-            }
-        )
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        isPermissionGranted = granted
-        if (granted) {
-            Toast.makeText(context, "Fitness Tracking Permission Granted! Automatic tracking active.", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(context, "Permission Denied. Manual tracking mode only.", Toast.LENGTH_SHORT).show()
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -1792,22 +1718,69 @@ fun StepsDetailsPage(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+                ) {
+                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text("HEALTH & FITNESS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WaterBlue, letterSpacing = 2.sp)
+                    Text("Steps Details Tracker", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+
+            // Calendar selector button (top right)
             IconButton(
-                onClick = onBack,
+                onClick = {
+                    val calendar = Calendar.getInstance()
+                    try {
+                        val parsedDate = sdf.parse(selectedDate)
+                        if (parsedDate != null) {
+                            calendar.time = parsedDate
+                        }
+                    } catch (e: Exception) {}
+
+                    val datePickerDialog = android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val cal = Calendar.getInstance()
+                            cal.set(Calendar.YEAR, year)
+                            cal.set(Calendar.MONTH, month)
+                            cal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            val newDateStr = sdf.format(cal.time)
+                            viewModel.selectHealthDate(newDateStr)
+                            Toast.makeText(context, "Selected date: $newDateStr", Toast.LENGTH_SHORT).show()
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                    datePickerDialog.show()
+                },
                 modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
             ) {
-                Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column {
-                Text("HEALTH & FITNESS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WaterBlue, letterSpacing = 2.sp)
-                Text("Steps Details Tracker", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date", tint = Color.White)
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Display current date being edited
+        Text(
+            text = "Viewing details for: $displayDateText",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Gray,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Summary Card
         Card(
@@ -1948,72 +1921,6 @@ fun StepsDetailsPage(
                 Text("Save Manual Details", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Permission card
-        Text(
-            text = "FITNESS TRACKING PERMISSIONS",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = WaterBlue,
-            letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.04f)),
-            shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isPermissionGranted) Icons.Default.CheckCircle else Icons.Default.Info,
-                        contentDescription = "Permission state",
-                        tint = if (isPermissionGranted) SuccessGreen else Color.Yellow,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isPermissionGranted) "Fitness Permission Granted" else "Physical Activity Permission Required",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Granting this permission allows Life OS to automatically track physical steps in the background using your device's internal step sensors.",
-                    color = Color.Gray,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Button(
-                    onClick = {
-                        if (activityRecognitionPermission != null) {
-                            permissionLauncher.launch(activityRecognitionPermission)
-                        } else {
-                            Toast.makeText(context, "Physical tracking is automatically active on this OS version.", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isPermissionGranted) Color.White.copy(alpha = 0.1f) else WaterBlue
-                    ),
-                    enabled = !isPermissionGranted
-                ) {
-                    Text(
-                        text = if (isPermissionGranted) "Permission Active" else "Grant Fitness Tracking Permission",
-                        color = if (isPermissionGranted) Color.Gray else Color.Black,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -2033,6 +1940,22 @@ fun SleepDetailsPage(
     var endMinute by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(record.dateString, record.sleepMinutes) {
+        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val savedStart = prefs.getString("sleep_start_time_${record.dateString}", null)
+        val savedEnd = prefs.getString("sleep_end_time_${record.dateString}", null)
+
+        if (savedStart != null && savedEnd != null) {
+            val startParts = savedStart.split(":")
+            val endParts = savedEnd.split(":")
+            if (startParts.size == 2 && endParts.size == 2) {
+                startHour = startParts[0].toIntOrNull() ?: 23
+                startMinute = startParts[1].toIntOrNull() ?: 0
+                endHour = endParts[0].toIntOrNull() ?: 7
+                endMinute = endParts[1].toIntOrNull() ?: 0
+                return@LaunchedEffect
+            }
+        }
+
         val totalMins = record.sleepMinutes
         if (totalMins <= 0) {
             startHour = 23
@@ -2221,24 +2144,25 @@ fun SleepDetailsPage(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "7-Day Sleep History",
+                    text = "14-Day Sleep History",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
                 Text(
-                    text = "Click any bar to view or edit that day's sleep",
+                    text = "Swipe horizontally. Click any bar to view or edit that day's sleep",
                     fontSize = 11.sp,
                     color = Color.Gray
                 )
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Build past 7 days of sleep data ending at selectedDate
-                val last7Days = (0..6).map { offset ->
+                // Build past 14 days of sleep data ending at TODAY to prevent shifting on selection
+                val todayDateStr = viewModel.getCurrentDateString()
+                val last14Days = (0..13).map { offset ->
                     val cal = Calendar.getInstance()
                     try {
-                        val parsed = sdf.parse(selectedDate)
+                        val parsed = sdf.parse(todayDateStr)
                         if (parsed != null) cal.time = parsed
                     } catch (e: Exception) {}
                     cal.add(Calendar.DATE, -offset)
@@ -2248,18 +2172,19 @@ fun SleepDetailsPage(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
                         .height(180.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    last7Days.forEach { barDateString ->
+                    last14Days.forEach { barDateString ->
                         val matchingRecord = allRecords.find { it.dateString == barDateString }
                         val mins = matchingRecord?.sleepMinutes ?: 0
                         val hrs = mins / 60.0f
                         
                         val isCurrentSelected = barDateString == selectedDate
                         
-                        // Height proportional to duration. Let's set 10 hours as 100% height = 130.dp
+                        // Height proportional to duration. Let's set 10 hours as 100% height = 120.dp
                         val barHeight = (120 * (hrs / 10f).coerceIn(0.04f, 1f)).dp
                         
                         val barColor = when {
@@ -2295,7 +2220,7 @@ fun SleepDetailsPage(
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
-                                .weight(1f)
+                                .width(44.dp)
                                 .clickable {
                                     viewModel.selectHealthDate(barDateString)
                                 }
@@ -2315,7 +2240,7 @@ fun SleepDetailsPage(
                             Box(
                                 modifier = Modifier
                                     .height(barHeight)
-                                    .fillMaxWidth()
+                                    .width(26.dp)
                                     .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
                                     .background(
                                         if (isCurrentSelected) barColor else barColor.copy(alpha = 0.5f)
@@ -2572,6 +2497,11 @@ fun SleepDetailsPage(
                 // SAVE BUTTON
                 Button(
                     onClick = {
+                        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                        prefs.edit()
+                            .putString("sleep_start_time_${record.dateString}", String.format(Locale.US, "%02d:%02d", startHour, startMinute))
+                            .putString("sleep_end_time_${record.dateString}", String.format(Locale.US, "%02d:%02d", endHour, endMinute))
+                            .apply()
                         viewModel.updateHealthMetric(sleepMinutes = computedMinutes)
                         Toast.makeText(context, "Sleep hours updated successfully!", Toast.LENGTH_SHORT).show()
                     },
@@ -2586,6 +2516,28 @@ fun SleepDetailsPage(
                         Icon(imageVector = Icons.Default.Save, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Save Sleep Record", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // AUTOMATED DETECTION BUTTON
+                OutlinedButton(
+                    onClick = {
+                        viewModel.trackSleepFromDeviceUsage(context, force = true)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF66BB6A)),
+                    border = BorderStroke(1.dp, Color(0xFF66BB6A).copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = Icons.Default.Autorenew, contentDescription = null, tint = Color(0xFF66BB6A))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Auto-Detect Sleep (Device Usage)", color = Color(0xFF66BB6A), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }
@@ -3062,6 +3014,443 @@ fun FoodDetailsPage(
 
                     if (historyDate != last7Days.last()) {
                         HorizontalDivider(color = Color.White.copy(alpha = 0.05f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WaterDetailsPage(
+    viewModel: AppViewModel,
+    record: HealthRecord,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val allRecords by viewModel.healthRecordsList.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedHealthDate.collectAsStateWithLifecycle()
+
+    var inputWater by remember { mutableStateOf(record.waterMl.toString()) }
+    var inputGoal by remember { mutableStateOf(record.waterGoalMl.toString()) }
+
+    LaunchedEffect(record.dateString, record.waterMl, record.waterGoalMl) {
+        inputWater = record.waterMl.toString()
+        inputGoal = record.waterGoalMl.toString()
+    }
+
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val displayDateText = try {
+        val parsed = sdf.parse(selectedDate)
+        if (parsed != null) {
+            val sdfDisplay = SimpleDateFormat("EEEE, MMM d, yyyy", Locale.US)
+            sdfDisplay.format(parsed)
+        } else {
+            selectedDate
+        }
+    } catch (e: Exception) {
+        selectedDate
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF07080F))
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Header Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+                ) {
+                    Icon(imageVector = Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "WATER TRACKER",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = WaterBlue,
+                        letterSpacing = 1.5.sp
+                    )
+                    Text(
+                        text = "Hydration Analytics",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // Calendar selector button (top right)
+            IconButton(
+                onClick = {
+                    val calendar = Calendar.getInstance()
+                    try {
+                        val parsedDate = sdf.parse(selectedDate)
+                        if (parsedDate != null) {
+                            calendar.time = parsedDate
+                        }
+                    } catch (e: Exception) {}
+
+                    val datePickerDialog = android.app.DatePickerDialog(
+                        context,
+                        { _, year, month, dayOfMonth ->
+                            val cal = Calendar.getInstance()
+                            cal.set(Calendar.YEAR, year)
+                            cal.set(Calendar.MONTH, month)
+                            cal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                            val newDateStr = sdf.format(cal.time)
+                            viewModel.selectHealthDate(newDateStr)
+                            Toast.makeText(context, "Selected date: $newDateStr", Toast.LENGTH_SHORT).show()
+                        },
+                        calendar.get(Calendar.YEAR),
+                        calendar.get(Calendar.MONTH),
+                        calendar.get(Calendar.DAY_OF_MONTH)
+                    )
+                    datePickerDialog.show()
+                },
+                modifier = Modifier.background(Color.White.copy(alpha = 0.08f), CircleShape)
+            ) {
+                Icon(imageVector = Icons.Default.DateRange, contentDescription = "Select Date", tint = Color.White)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Active Date Water Record Summary Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = displayDateText,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Gray
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "${record.waterMl} ml",
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Goal: ${record.waterGoalMl} ml",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                    
+                    val progress = if (record.waterGoalMl > 0) (record.waterMl.toFloat() / record.waterGoalMl.toFloat()).coerceIn(0f, 1f) else 0f
+                    val (statusText, statusColor) = when {
+                        progress < 0.5f -> "Dehydrated" to Color(0xFFEF5350)
+                        progress < 1.0f -> "Needs Improvement" to Color(0xFFFFCA28)
+                        else -> "Optimal" to Color(0xFF66BB6A)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(statusColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                            .border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Progress Indicator
+                val progressVal = if (record.waterGoalMl > 0) (record.waterMl.toFloat() / record.waterGoalMl.toFloat()).coerceIn(0f, 1f) else 0f
+                LinearProgressIndicator(
+                    progress = progressVal,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(CircleShape),
+                    color = WaterBlue,
+                    trackColor = Color.White.copy(alpha = 0.05f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 14-Day Water Data Bar Graph Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "14-Day Water History",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Swipe horizontally. Click any bar to view or edit that day's water",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                val todayDateStr = viewModel.getCurrentDateString()
+                val last14Days = (0..13).map { offset ->
+                    val cal = Calendar.getInstance()
+                    try {
+                        val parsed = sdf.parse(todayDateStr)
+                        if (parsed != null) cal.time = parsed
+                    } catch (e: Exception) {}
+                    cal.add(Calendar.DATE, -offset)
+                    sdf.format(cal.time)
+                }.reversed()
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .height(180.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    last14Days.forEach { barDateString ->
+                        val matchingRecord = allRecords.find { it.dateString == barDateString }
+                        val ml = matchingRecord?.waterMl ?: 0
+                        val goal = matchingRecord?.waterGoalMl ?: 2000
+                        val ratio = if (goal > 0) ml.toFloat() / goal.toFloat() else 0f
+                        
+                        val isCurrentSelected = barDateString == selectedDate
+                        
+                        // Height proportional to intake. Standardize max height representing 3000ml = 120.dp
+                        val barHeight = (120 * (ml.toFloat() / 3000f).coerceIn(0.04f, 1.2f)).dp
+                        
+                        val barColor = when {
+                            ratio < 0.5f -> Color(0xFFEF5350)
+                            ratio < 1.0f -> Color(0xFFFFCA28)
+                            else -> Color(0xFF66BB6A)
+                        }
+
+                        val dayLabel = try {
+                            val parsedDate = sdf.parse(barDateString)
+                            if (parsedDate != null) {
+                                SimpleDateFormat("EEE", Locale.US).format(parsedDate)
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+
+                        val shortDateLabel = try {
+                            val parsedDate = sdf.parse(barDateString)
+                            if (parsedDate != null) {
+                                SimpleDateFormat("MM/dd", Locale.US).format(parsedDate)
+                            } else {
+                                ""
+                            }
+                        } catch (e: Exception) {
+                            ""
+                        }
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(44.dp)
+                                .clickable {
+                                    viewModel.selectHealthDate(barDateString)
+                                }
+                        ) {
+                            Text(
+                                text = "${ml}ml",
+                                fontSize = 8.sp,
+                                color = if (isCurrentSelected) Color.White else Color.Gray,
+                                fontWeight = if (isCurrentSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .height(barHeight)
+                                    .width(26.dp)
+                                    .clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp))
+                                    .background(
+                                        if (isCurrentSelected) barColor else barColor.copy(alpha = 0.5f)
+                                    )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = dayLabel,
+                                fontSize = 10.sp,
+                                color = if (isCurrentSelected) WaterBlue else Color.Gray,
+                                fontWeight = if (isCurrentSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            Text(
+                                text = shortDateLabel,
+                                fontSize = 8.sp,
+                                color = Color.DarkGray
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Manual log fields & Quick adjustments
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Manual Hydration Intake Log",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Adjust ml amount manually or set target goals",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // Quick Increment Shortcuts inside detail page
+                Text(text = "Quick Logging Additions", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            val current = inputWater.toIntOrNull() ?: 0
+                            inputWater = (current + 250).toString()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("+250 ml", color = WaterBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            val current = inputWater.toIntOrNull() ?: 0
+                            inputWater = (current + 500).toString()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("+500 ml", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            inputWater = "0"
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.08f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Reset", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Text Fields
+                OutlinedTextField(
+                    value = inputWater,
+                    onValueChange = { inputWater = it },
+                    label = { Text("Water Intake (ml)") },
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = WaterBlue,
+                        focusedLabelColor = WaterBlue,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        unfocusedLabelColor = Color.Gray,
+                        cursorColor = WaterBlue
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = inputGoal,
+                    onValueChange = { inputGoal = it },
+                    label = { Text("Water Goal Target (ml)") },
+                    textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = WaterBlue,
+                        focusedLabelColor = WaterBlue,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        unfocusedLabelColor = Color.Gray,
+                        cursorColor = WaterBlue
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // SAVE BUTTON
+                Button(
+                    onClick = {
+                        val finalWater = inputWater.toIntOrNull() ?: record.waterMl
+                        val finalGoal = inputGoal.toIntOrNull() ?: record.waterGoalMl
+                        viewModel.updateHealthMetric(
+                            waterMl = finalWater,
+                            waterGoalMl = finalGoal
+                        )
+                        Toast.makeText(context, "Water record updated successfully!", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Hydration Record", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
             }

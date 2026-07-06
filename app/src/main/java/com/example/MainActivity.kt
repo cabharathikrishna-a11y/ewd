@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 if (modelClass.isAssignableFrom(AppViewModel::class.java)) {
                     val db = AppDatabase.getInstance(applicationContext)
-                    val repo = LocalRepository(db)
+                    val repo = LocalRepository(db, applicationContext)
                     @Suppress("UNCHECKED_CAST")
                     return AppViewModel(application, repo) as T
                 }
@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         database = AppDatabase.getInstance(applicationContext)
-                        repository = LocalRepository(database)
+                        repository = LocalRepository(database, applicationContext)
 
                         // Initialize timer manager with context
                         FocusTimerManager.init(applicationContext)
@@ -428,6 +428,24 @@ class MainActivity : ComponentActivity() {
                                 focusManager.clearFocus(force = true)
                             } else {
                                 viewModel.setShowHistoryScreen(false)
+                            }
+                        }
+                    } else if (currentScreen == Screen.SETTINGS) {
+                        val settingsActivePage by viewModel.settingsActivePage.collectAsStateWithLifecycle()
+                        val previousScreenBeforeSettings by viewModel.previousScreenBeforeSettings.collectAsStateWithLifecycle()
+                        BackHandler(enabled = true) {
+                            if (isKeyboardVisible) {
+                                keyboardController?.hide()
+                                focusManager.clearFocus(force = true)
+                            } else if (settingsActivePage != 0) {
+                                viewModel.updateSettingsActivePage(0)
+                            } else {
+                                val previous = previousScreenBeforeSettings
+                                if (previous != null && previous != Screen.SETTINGS && previous != Screen.LOGIN && previous != Screen.PROFILE_SETUP && previous != Screen.PERMISSION_ONBOARDING && previous != Screen.CALENDAR_OPTIMIZATION_ONBOARDING) {
+                                    viewModel.navigateTo(previous)
+                                } else {
+                                    viewModel.navigateTo(Screen.DEEPA_AI)
+                                }
                             }
                         }
                     } else {

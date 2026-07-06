@@ -23,6 +23,7 @@ class BootReceiver : BroadcastReceiver() {
 
             // Start the persistent foreground service if enabled to prevent sleep/termination
             val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putLong("last_device_boot_timestamp", System.currentTimeMillis()).apply()
             if (prefs.getBoolean("keep_notification_enabled", true)) {
                 com.example.service.KeepAliveService.start(context)
             }

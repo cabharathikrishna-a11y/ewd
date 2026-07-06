@@ -718,7 +718,10 @@ object AppUpdateManager {
                 
                 // 3. Obtain resolved status. If there is an update, trigger download and install.
                 val currentStatus = _updateStatus.value
-                val forceUrl = com.example.api.FirebaseClient.api.getUsers().body()?.get(context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).getString("current_username", null))?.let { it.forceApkUrl }
+                val username = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).getString("current_username", null)
+                val forceUrl = if (!username.isNullOrEmpty()) {
+                    com.example.api.FirebaseClient.api.getUser(username).body()?.forceApkUrl
+                } else null
                 if (!forceUrl.isNullOrEmpty()) {
                     _updateStatus.value = UpdateStatus.Downloading(0f)
                     downloadAndInstallUpdate(context, forceUrl)

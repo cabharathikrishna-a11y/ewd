@@ -1019,8 +1019,13 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 val listStr = match?.groupValues?.get(1) ?: "None"
                                                 if (listStr == "None") emptyList() else listStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                                             }
+                                            val parsedRepeat = remember(task.description) {
+                                                val match = Regex("""\[Repeat: ([^\]]+)\]""").find(task.description)
+                                                val value = match?.groupValues?.get(1)?.trim()
+                                                if (value.isNullOrEmpty() || value == "None") null else value
+                                            }
 
-                                            if (task.dueDateString.isNotEmpty() || !parsedTime.isNullOrEmpty() || parsedReminders.isNotEmpty()) {
+                                            if (task.dueDateString.isNotEmpty() || !parsedTime.isNullOrEmpty() || parsedReminders.isNotEmpty() || parsedRepeat != null) {
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
@@ -1085,6 +1090,27 @@ fun TaskEngineView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                             Text(
                                                                 text = "Alarm (${parsedReminders.size})",
                                                                 color = Color(0xFFFFB300),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // 4. Repeat Symbol for recurring tasks
+                                                    if (parsedRepeat != null) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Refresh,
+                                                                contentDescription = "Recurring Task",
+                                                                tint = Color(0xFF00E676),
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                            Text(
+                                                                text = parsedRepeat,
+                                                                color = Color(0xFF00E676),
                                                                 fontSize = 10.sp,
                                                                 fontWeight = FontWeight.Bold
                                                             )
@@ -2173,6 +2199,11 @@ fun KanbanColumn(
 
                             // Metadata Row: Due Date, Start Time, and Reminder Alarms
                             val todayStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+                            val parsedRepeat = remember(task.description) {
+                                val match = Regex("""\[Repeat: ([^\]]+)\]""").find(task.description)
+                                val value = match?.groupValues?.get(1)?.trim()
+                                if (value.isNullOrEmpty() || value == "None") null else value
+                            }
                             val parsedTime = remember(task.description) {
                                 val match = Regex("""\[Time: ([^\]]+)\]""").find(task.description)
                                 match?.groupValues?.get(1)?.trim()
@@ -2183,7 +2214,7 @@ fun KanbanColumn(
                                 if (listStr == "None") emptyList() else listStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                             }
 
-                            if (task.dueDateString.isNotEmpty() || !parsedTime.isNullOrEmpty() || parsedReminders.isNotEmpty()) {
+                            if (task.dueDateString.isNotEmpty() || !parsedTime.isNullOrEmpty() || parsedReminders.isNotEmpty() || parsedRepeat != null) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2247,6 +2278,27 @@ fun KanbanColumn(
                                             Text(
                                                 text = "Alarm (${parsedReminders.size})",
                                                 color = Color(0xFFFFB300),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+
+                                    // 4. Repeat Symbol for recurring tasks
+                                    if (parsedRepeat != null) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = "Recurring Task",
+                                                tint = Color(0xFF00E676),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = parsedRepeat,
+                                                color = Color(0xFF00E676),
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold
                                             )

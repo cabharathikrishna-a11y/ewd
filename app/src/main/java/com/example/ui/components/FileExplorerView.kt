@@ -1,6 +1,11 @@
 package com.example.ui.components
 
 import com.example.util.MediaPreviewBox
+import com.example.util.PdfViewerDialog
+import com.example.util.VideoPlayerDialog
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.launch
@@ -57,6 +62,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val contacts by viewModel.contacts.collectAsState()
     
     var longPressedFile by remember { mutableStateOf<ExplorerFile?>(null) }
+    var activePreviewFile by remember { mutableStateOf<ExplorerFile?>(null) }
 
     // Google Drive Integration State
     val googleAccount = remember { com.google.android.gms.auth.api.signin.GoogleSignIn.getLastSignedInAccount(context) }
@@ -307,197 +313,6 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        // Google Drive Integration Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = SurfaceCard),
-            border = androidx.compose.foundation.BorderStroke(1.dp, WaterBlue.copy(alpha = 0.2f))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Cloud,
-                            contentDescription = "Drive Integration",
-                            tint = WaterBlue,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "Google Drive Storage",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                            Text(
-                                text = if (hasPermission) (googleAccount?.email ?: "Integrated") else "Not integrated",
-                                color = if (hasPermission) WaterBlue else Color.Gray,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    if (!hasPermission) {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    com.example.util.GoogleDriveSyncManager.getAccessToken(context) { intent ->
-                                        authResolutionLauncher.launch(intent)
-                                    }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
-                            shape = RoundedCornerShape(20.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                            modifier = Modifier.height(34.dp).testTag("connect_drive_btn")
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Black)
-                                Text("INTEGRATE", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .background(Color(0xFF1B5E20), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "INTEGRATED",
-                                color = Color.Green,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "By default, the File Explorer and application databases are integrated with Google Drive. All journal attachments, task uploads, and contacts files sync securely to your private AppData sandbox.",
-                    color = Color.LightGray,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp
-                )
-
-                if (lastSyncTs > 0L) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Last Synced: " + java.text.SimpleDateFormat("dd MMM yyyy, hh:mm:ss a", java.util.Locale.getDefault()).format(java.util.Date(lastSyncTs)),
-                        color = Color.Gray,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                if (hasPermission) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f), thickness = 0.5.dp)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (isOperating) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(color = WaterBlue, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Syncing with Google Drive Cloud...", color = Color.LightGray, fontSize = 11.sp)
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = {
-                                    isOperating = true
-                                    viewModel.backupAllDataToGoogleDrive(context, { intent ->
-                                        authResolutionLauncher.launch(intent)
-                                    }) { success, msg ->
-                                        isOperating = false
-                                        syncMessage = msg
-                                        if (success) {
-                                            lastSyncTs = prefs.getLong("gd_all_last_sync_timestamp", 0L)
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF161618)),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, WaterBlue.copy(alpha = 0.4f)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f).height(38.dp).testTag("drive_backup_btn")
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp), tint = WaterBlue)
-                                    Text("BACKUP NOW", color = WaterBlue, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    isOperating = true
-                                    viewModel.restoreAllDataFromGoogleDrive(context, { intent ->
-                                        authResolutionLauncher.launch(intent)
-                                    }) { success, msg ->
-                                        isOperating = false
-                                        syncMessage = msg
-                                        if (success) {
-                                            lastSyncTs = prefs.getLong("gd_all_last_sync_timestamp", 0L)
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF161618)),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.4f)),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f).height(38.dp).testTag("drive_restore_btn")
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.LightGray)
-                                    Text("RESTORE DATA", color = Color.LightGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (syncMessage != null) {
-            AlertDialog(
-                onDismissRequest = { syncMessage = null },
-                title = { Text("Cloud Sync", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) },
-                text = { Text(syncMessage!!, color = Color.LightGray, fontSize = 13.sp) },
-                confirmButton = {
-                    TextButton(onClick = { syncMessage = null }) {
-                        Text("OK", color = WaterBlue, fontWeight = FontWeight.Bold)
-                    }
-                },
-                containerColor = Color(0xFF161618),
-                shape = RoundedCornerShape(16.dp)
-            )
-        }
-
         // Filter bar using chips
         Row(
             modifier = Modifier
@@ -752,7 +567,7 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             .aspectRatio(1f) // Makes it perfect square!
                             .clip(RoundedCornerShape(12.dp))
                             .combinedClickable(
-                                onClick = { file.onClick() },
+                                onClick = { activePreviewFile = file },
                                 onLongClick = { longPressedFile = file }
                             ),
                         colors = CardDefaults.cardColors(containerColor = SurfaceCard),
@@ -941,6 +756,255 @@ fun FileExplorerView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 containerColor = Color(0xFF161618),
                 shape = RoundedCornerShape(16.dp)
             )
+        }
+
+        if (activePreviewFile != null) {
+            val fileNode = activePreviewFile!!
+            val isPdf = remember(fileNode.name) { fileNode.name.lowercase().endsWith(".pdf") }
+            
+            if (isPdf) {
+                PdfViewerDialog(filePath = fileNode.path, onDismiss = { activePreviewFile = null })
+            } else if (fileNode.type == "video") {
+                VideoPlayerDialog(filePath = fileNode.path, onDismiss = { activePreviewFile = null })
+            } else if (fileNode.type == "image") {
+                Dialog(onDismissRequest = { activePreviewFile = null }) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF12131A),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // Title / Header Row
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = fileNode.name,
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = fileNode.sourceName,
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { activePreviewFile = null },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Large Image Frame
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(280.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val isWebUrl = remember(fileNode.path) { fileNode.path.startsWith("http://") || fileNode.path.startsWith("https://") }
+                                AsyncImage(
+                                    model = if (isWebUrl) fileNode.path else java.io.File(fileNode.path),
+                                    contentDescription = "Full Preview",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Bottom Action Buttons
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val act = activePreviewFile
+                                        activePreviewFile = null
+                                        act?.onClick?.invoke()
+                                    },
+                                    modifier = Modifier.weight(1.2f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                        Text("GO TO SOURCE", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Download started: \"${fileNode.name}\" has been exported to Downloads folder.",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3B3A)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF00BFA5))
+                                        Text("DOWNLOAD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00BFA5), maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Audio or other types
+                Dialog(onDismissRequest = { activePreviewFile = null }) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF12131A),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = fileNode.name,
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Linked Source: ${fileNode.sourceName}",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { activePreviewFile = null },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(100.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black.copy(alpha = 0.3f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    val mimeIcon = if (fileNode.type == "audio") Icons.Default.Mic else Icons.Default.InsertDriveFile
+                                    Icon(
+                                        imageVector = mimeIcon,
+                                        contentDescription = null,
+                                        tint = WaterBlue,
+                                        modifier = Modifier.size(40.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Type: ${fileNode.type.uppercase()} • ${fileNode.dateText}",
+                                        color = Color.LightGray,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        val act = activePreviewFile
+                                        activePreviewFile = null
+                                        act?.onClick?.invoke()
+                                    },
+                                    modifier = Modifier.weight(1.2f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                        Text("GO TO SOURCE", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Download started: \"${fileNode.name}\" has been exported to Downloads folder.",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D3B3A)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF00BFA5))
+                                        Text("DOWNLOAD", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00BFA5), maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
