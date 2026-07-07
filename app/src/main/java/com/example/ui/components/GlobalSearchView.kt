@@ -1123,14 +1123,6 @@ fun NoteSearchItem(note: KeepNote, onOpen: () -> Unit) {
                         )
                     }
                 }
-                if (note.isSynced) {
-                    Icon(
-                        imageVector = Icons.Default.CloudQueue,
-                        contentDescription = "Synced to Google Keep",
-                        tint = WaterBlue.copy(alpha = 0.6f),
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
             }
             if (note.content.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(4.dp))

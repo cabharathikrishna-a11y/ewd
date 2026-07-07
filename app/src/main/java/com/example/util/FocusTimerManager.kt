@@ -924,33 +924,7 @@ object FocusTimerManager {
 }
 
     private fun startUiTickLoop() {
-        actualUiTickJob?.cancel()
-        actualUiTickJob = scope.launch {
-            while (isActive) {
-                if (_isTimerRunning.value) {
-                    val currentRealtime = android.os.SystemClock.elapsedRealtime()
-                    val elapsedSinceResume = (currentRealtime - activeSessionStartRealtimeMs) / 1000
-                    val totalElapsedThisSession = baseAccumulatedSeconds + elapsedSinceResume.toInt()
-                    
-                    if (_isFocusPhase.value) {
-                        val totalDurationMs = _timerDurationMinutes.value * 60 * 1000L
-                        val remainingMs = totalDurationMs - (totalElapsedThisSession * 1000L)
-                        _timerSecondsLeft.value = maxOf(0, (remainingMs / 1000).toInt())
-                        _cumulativeSessionFocusSeconds.value = totalElapsedThisSession
-                    }
-                } else if (_isStopwatchActive.value) {
-                    val currentRealtime = android.os.SystemClock.elapsedRealtime()
-                    val elapsedSinceResume = (currentRealtime - activeSessionStartRealtimeMs) / 1000
-                    val totalElapsedThisSession = baseAccumulatedSeconds + elapsedSinceResume.toInt()
-                    
-                    _stopwatchSeconds.value = totalElapsedThisSession
-                    if (_isFocusPhase.value) {
-                         _cumulativeSessionFocusSeconds.value = totalElapsedThisSession
-                    }
-                }
-                delay(1000L)
-            }
-        }
+        // No-op to prevent low-precision ticking from fighting with high-precision timer/stopwatch jobs.
     }
 
     fun setStopwatchBreakDuration(context: Context, mins: Int) {
@@ -1214,6 +1188,7 @@ object FocusTimerManager {
             lastResumeElapsedRealtime = android.os.SystemClock.elapsedRealtime()
             saveActiveSessionState(appContext)
 
+            timerJob?.cancel()
             timerJob = scope.launch {
                 KeepAliveService.updateNotification(appContext)
                 syncStateToFirebase(appContext)
@@ -1277,6 +1252,7 @@ object FocusTimerManager {
             
             saveActiveSessionState(appContext)
 
+            timerJob?.cancel()
             timerJob = scope.launch {
                 KeepAliveService.updateNotification(appContext)
                 syncStateToFirebase(appContext)
@@ -1668,6 +1644,7 @@ object FocusTimerManager {
         lastResumeElapsedRealtime = android.os.SystemClock.elapsedRealtime()
         saveActiveSessionState(appContext)
 
+        stopwatchJob?.cancel()
         stopwatchJob = scope.launch {
             KeepAliveService.updateNotification(appContext)
                 syncStateToFirebase(appContext)

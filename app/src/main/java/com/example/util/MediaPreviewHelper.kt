@@ -292,7 +292,7 @@ fun MediaPreviewBox(
                     colors = CardDefaults.cardColors(containerColor = Color.Transparent)
                 ) {
                     AsyncImage(
-                        model = if (isWebUrl) cleanPath else "$cleanPath?rev=$fileLastModified",
+                        model = if (isWebUrl) cleanPath else java.io.File(cleanPath),
                         contentDescription = "Image Preview",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()

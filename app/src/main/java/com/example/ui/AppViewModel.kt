@@ -1020,6 +1020,20 @@ class AppViewModel(application: Application, private val repository: LocalReposi
             }
         }
 
+        // Keep local user's data instantly synced inside the usersState map
+        // whenever the current user remote changes, ensuring instant UI reflection (like showing our photo/avatar in the focus pill).
+        viewModelScope.launch {
+            _currentUserRemote.collect { me ->
+                val username = _currentUsername.value
+                if (username != null && me != null) {
+                    val currentMap = _allUsers.value
+                    if (currentMap[username] != me) {
+                        com.example.api.FirebaseRepository.updateUsers(mapOf(username to me))
+                    }
+                }
+            }
+        }
+
         // Initialize local native Gemma on-device inference engine if present
         viewModelScope.launch(Dispatchers.IO) {
             com.example.util.LocalGemmaInferenceManager.initialize(application)
@@ -4162,73 +4176,8 @@ class AppViewModel(application: Application, private val repository: LocalReposi
     }
 
     // ==========================================
-    // Google Photos Sync State & Actions
+    // Task Assignment Time Blocks
     // ==========================================
-    private val _googlePhotosSyncStatus = MutableStateFlow<String>("Idle")
-    val googlePhotosSyncStatus: StateFlow<String> = _googlePhotosSyncStatus.asStateFlow()
-
-    fun syncGooglePhotos(
-        context: android.content.Context,
-        sandboxMode: Boolean,
-        onAuthResolutionRequired: (android.content.Intent) -> Unit = {}
-    ) {
-        viewModelScope.launch {
-            // Persist the user's sandbox preference for automatic uploads
-            val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("google_photos_sandbox_mode", sandboxMode).apply()
-
-            _googlePhotosSyncStatus.value = "Starting..."
-            val callback = object : com.example.util.GooglePhotosSyncManager.SyncCallback {
-                override fun onProgress(message: String) {
-                    _googlePhotosSyncStatus.value = message
-                }
-
-                override fun onError(error: String) {
-                    _googlePhotosSyncStatus.value = "Error: $error"
-                }
-
-                override fun onSuccess(createdCount: Int, attachedCount: Int) {
-                    _googlePhotosSyncStatus.value = "Successfully imported Google Photos! Created $createdCount new memories and attached photos to $attachedCount existing days."
-                }
-            }
-
-            try {
-                if (sandboxMode) {
-                    com.example.util.GooglePhotosSyncManager.syncGooglePhotosSimulator(
-                        context = context,
-                        database = repository.db,
-                        callback = callback
-                    )
-                } else {
-                    com.example.util.GooglePhotosSyncManager.syncRealGooglePhotos(
-                        context = context,
-                        database = repository.db,
-                        callback = callback,
-                        onAuthResolutionRequired = onAuthResolutionRequired
-                    )
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-                _googlePhotosSyncStatus.value = "Sync failed: ${e.localizedMessage}"
-            }
-        }
-    }
-
-    fun uploadJournalPhotoToGooglePhotos(context: android.content.Context, photoFile: java.io.File) {
-        viewModelScope.launch {
-            val prefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-            val sandboxMode = prefs.getBoolean("google_photos_sandbox_mode", true)
-            _googlePhotosSyncStatus.value = "Uploading new journal capture to Google Photos..."
-            val success = com.example.util.GooglePhotosSyncManager.uploadPhotoToGooglePhotos(context, photoFile, sandboxMode)
-            if (success) {
-                _googlePhotosSyncStatus.value = "Newly captured photo successfully uploaded/synced to Google Photos!"
-            } else {
-                _googlePhotosSyncStatus.value = "Google Photos Upload failed. Connect account if using Real Sync Mode."
-            }
-        }
-    }
-
     fun assignTaskToTimeBlock(task: Task, hour: Int?) {
         viewModelScope.launch {
             repository.updateTask(task.copy(timeBlockTimestamp = hour?.toLong()))

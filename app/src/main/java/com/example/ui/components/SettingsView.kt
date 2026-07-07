@@ -234,13 +234,6 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             icon = Icons.Default.AccountBox,
                             iconBgColor = Color(0xFF03A9F4)
                         ) { activePage = 8 }
-                        HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
-                        SettingsRowItem(
-                            title = "18. GOOGLE FIT SYNC",
-                            subtitle = "Synchronize activity data directly with your Google Fit account",
-                            icon = Icons.Default.DirectionsWalk,
-                            iconBgColor = Color(0xFFFFA726)
-                        ) { activePage = 20 }
                     }
                 }
 
@@ -281,7 +274,7 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         ) { activePage = 14 }
                         HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
                         SettingsRowItem(
-                            title = "17. PERMISSIONS & API CONNECTIONS",
+                            title = "15. PERMISSIONS & API CONNECTIONS",
                             subtitle = "Manage system permissions and Google Drive",
                             icon = Icons.Default.CheckCircle,
                             iconBgColor = Color(0xFF4CAF50)
@@ -293,18 +286,25 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 item {
                     SettingsCategoryGroup(title = "Account & Sync") {
                         SettingsRowItem(
-                            title = "15. USER INFO",
+                            title = "16. USER INFO",
                             subtitle = "Edit your profile details, nickname, and emoji",
                             icon = Icons.Default.Person,
                             iconBgColor = Color(0xFF673AB7)
                         ) { activePage = 15 }
                         HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
                         SettingsRowItem(
-                            title = "16. DEEP LINKS & SHORTCUTS",
+                            title = "17. DEEP LINKS & SHORTCUTS",
                             subtitle = "Copy application deep links, automation URI routes & assets",
                             icon = Icons.Default.Share,
                             iconBgColor = Color(0xFF03A9F4)
                         ) { activePage = 18 }
+                        HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
+                        SettingsRowItem(
+                            title = "18. GOOGLE FIT SYNC",
+                            subtitle = "Synchronize activity data directly with your Google Fit account",
+                            icon = Icons.Default.DirectionsWalk,
+                            iconBgColor = Color(0xFFFFA726)
+                        ) { activePage = 20 }
                         HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
                         SettingsRowItem(
                             title = "LOGOUT",

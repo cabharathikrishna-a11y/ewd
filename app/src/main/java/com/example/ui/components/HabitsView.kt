@@ -879,19 +879,51 @@ fun HabitsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextField(
-                                value = curScheduledTime,
-                                onValueChange = { curScheduledTime = it },
-                                label = { Text("Scheduled Time") },
-                                placeholder = { Text("e.g. 08:00") },
-                                colors = TextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.LightGray,
-                                    focusedContainerColor = SurfaceCard,
-                                    unfocusedContainerColor = SurfaceCard
-                                ),
-                                modifier = Modifier.weight(1f).testTag("habit_time_field")
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        val timeParts = curScheduledTime.split(":")
+                                        val initialHour = timeParts.getOrNull(0)?.toIntOrNull() ?: 8
+                                        val initialMinute = timeParts.getOrNull(1)?.toIntOrNull() ?: 0
+                                        android.app.TimePickerDialog(
+                                            context,
+                                            { _, hourOfDay, minute ->
+                                                curScheduledTime = String.format("%02d:%02d", hourOfDay, minute)
+                                            },
+                                            initialHour,
+                                            initialMinute,
+                                            true
+                                        ).show()
+                                    }
+                            ) {
+                                TextField(
+                                    value = curScheduledTime,
+                                    onValueChange = { },
+                                    readOnly = true,
+                                    enabled = false,
+                                    label = { Text("Scheduled Time") },
+                                    placeholder = { Text("e.g. 08:00") },
+                                    colors = TextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.LightGray,
+                                        disabledTextColor = Color.White,
+                                        focusedContainerColor = SurfaceCard,
+                                        unfocusedContainerColor = SurfaceCard,
+                                        disabledContainerColor = SurfaceCard,
+                                        disabledLabelColor = Color.Gray,
+                                        disabledPlaceholderColor = Color.Gray
+                                    ),
+                                    trailingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.AccessTime,
+                                            contentDescription = "Select Time",
+                                            tint = WaterBlue
+                                        )
+                                    },
+                                    modifier = Modifier.fillMaxWidth().testTag("habit_time_field")
+                                )
+                            }
 
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,

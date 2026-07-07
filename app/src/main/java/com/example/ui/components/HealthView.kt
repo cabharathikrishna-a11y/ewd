@@ -78,6 +78,13 @@ fun HealthView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     var showFoodDetails by remember { mutableStateOf(false) }
     var showWaterDetails by remember { mutableStateOf(false) }
 
+    androidx.activity.compose.BackHandler(enabled = showStepsDetails || showSleepDetails || showFoodDetails || showWaterDetails) {
+        showStepsDetails = false
+        showSleepDetails = false
+        showFoodDetails = false
+        showWaterDetails = false
+    }
+
     // Dialog state controllers
     var showManualLogDialog by remember { mutableStateOf(false) }
     var metricToLog by remember { mutableStateOf("") } // "Steps", "Sleep", "Calories", "HeartRate"
@@ -2135,7 +2142,7 @@ fun SleepDetailsPage(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 7-Day Sleep Data Bar Graph Card
+        // 30-Day Sleep Data Bar Graph Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
             shape = RoundedCornerShape(16.dp),
@@ -2144,7 +2151,7 @@ fun SleepDetailsPage(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "14-Day Sleep History",
+                    text = "30-Day Sleep History",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -2157,9 +2164,9 @@ fun SleepDetailsPage(
                 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // Build past 14 days of sleep data ending at TODAY to prevent shifting on selection
+                // Build past 30 days of sleep data ending at TODAY to prevent shifting on selection
                 val todayDateStr = viewModel.getCurrentDateString()
-                val last14Days = (0..13).map { offset ->
+                val last30Days = (0..29).map { offset ->
                     val cal = Calendar.getInstance()
                     try {
                         val parsed = sdf.parse(todayDateStr)
@@ -2177,7 +2184,7 @@ fun SleepDetailsPage(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    last14Days.forEach { barDateString ->
+                    last30Days.forEach { barDateString ->
                         val matchingRecord = allRecords.find { it.dateString == barDateString }
                         val mins = matchingRecord?.sleepMinutes ?: 0
                         val hrs = mins / 60.0f
@@ -3201,7 +3208,7 @@ fun WaterDetailsPage(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 14-Day Water Data Bar Graph Card
+        // 30-Day Water Data Bar Graph Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
             shape = RoundedCornerShape(16.dp),
@@ -3210,7 +3217,7 @@ fun WaterDetailsPage(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "14-Day Water History",
+                    text = "30-Day Water History",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -3224,7 +3231,7 @@ fun WaterDetailsPage(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 val todayDateStr = viewModel.getCurrentDateString()
-                val last14Days = (0..13).map { offset ->
+                val last30Days = (0..29).map { offset ->
                     val cal = Calendar.getInstance()
                     try {
                         val parsed = sdf.parse(todayDateStr)
@@ -3242,7 +3249,7 @@ fun WaterDetailsPage(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.Bottom
                 ) {
-                    last14Days.forEach { barDateString ->
+                    last30Days.forEach { barDateString ->
                         val matchingRecord = allRecords.find { it.dateString == barDateString }
                         val ml = matchingRecord?.waterMl ?: 0
                         val goal = matchingRecord?.waterGoalMl ?: 2000

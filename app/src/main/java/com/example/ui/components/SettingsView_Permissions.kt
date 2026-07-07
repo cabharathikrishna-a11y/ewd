@@ -32,7 +32,6 @@ import com.example.ui.AppViewModel
 import com.example.util.AppBlockHelper
 import com.example.util.GoogleDriveSyncManager
 import com.example.util.GoogleContactsSyncManager
-import com.example.util.GooglePhotosSyncManager
 import com.example.util.GoogleTasksSyncManager
 import com.example.util.GoogleFitSyncManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -69,7 +68,6 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
 
     var hasDrivePermission by remember { mutableStateOf(false) }
     var hasGoogleContactsPermission by remember { mutableStateOf(false) }
-    var hasGooglePhotosPermission by remember { mutableStateOf(false) }
     var hasGoogleTasksPermission by remember { mutableStateOf(false) }
     var hasGoogleFitPermission by remember { mutableStateOf(false) }
     
@@ -100,7 +98,6 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
 
         hasDrivePermission = GoogleDriveSyncManager.hasDrivePermission(context)
         hasGoogleContactsPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/contacts")
-        hasGooglePhotosPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/photoslibrary.readonly")
         hasGoogleTasksPermission = hasGoogleScope(context, "https://www.googleapis.com/auth/tasks")
         hasGoogleFitPermission = GoogleFitSyncManager.hasFitPermission(context)
 
@@ -260,21 +257,7 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
             }
         )
         
-        PermissionItem(
-            title = "Google Photos",
-            description = "Sync with Google Photos API.",
-            isGranted = hasGooglePhotosPermission,
-            onClick = {
-                if (!hasGooglePhotosPermission) {
-                    scope.launch {
-                        GooglePhotosSyncManager.getAccessToken(context) { intent ->
-                            authResolutionLauncher.launch(intent)
-                        }
-                    }
-                }
-            }
-        )
-        
+
         PermissionItem(
             title = "Google Tasks",
             description = "Sync with Google Tasks API.",

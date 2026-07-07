@@ -1023,7 +1023,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
         var expHour by remember { mutableStateOf(currentHourStr) }
         var expMinute by remember { mutableStateOf(currentMinuteStr) }
 
-        val memberAccounts = accounts.filter { it.memberId == expenseMemberId && (it.categoryType == "CURRENT_ASSETS" || it.categoryType == "CURRENT_LIABILITIES") }
+        val memberAccounts = accounts.filter { it.memberId == expenseMemberId }
         val expenseCats = categories.filter { it.type == "EXPENSE" }
 
         // Auto-select first account if none is chosen
@@ -1098,9 +1098,9 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                     }
 
                     // Account selections
-                    Text("SOURCE ACCOUNT (CURRENT ASSET / CURRENT LIABILITY)", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                    Text("SOURCE ACCOUNT", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                     if (memberAccounts.isEmpty()) {
-                        Text("⚠️ No current assets or current liabilities created for this member yet.", color = AlertRed, fontSize = 11.sp)
+                        Text("⚠️ No accounts created for this member yet.", color = AlertRed, fontSize = 11.sp)
                     } else {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             memberAccounts.forEach { acc ->
@@ -1245,7 +1245,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
         var incHour by remember { mutableStateOf(currentHourStr) }
         var incMinute by remember { mutableStateOf(currentMinuteStr) }
 
-        val memberAccounts = accounts.filter { it.memberId == incomeMemberId && (it.categoryType == "CURRENT_ASSETS" || it.categoryType == "CURRENT_LIABILITIES") }
+        val memberAccounts = accounts.filter { it.memberId == incomeMemberId }
         val incomeCats = categories.filter { it.type == "INCOME" }
 
         // Auto-select first available account
@@ -1464,7 +1464,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
         var trsfHour by remember { mutableStateOf(currentHourStr) }
         var trsfMinute by remember { mutableStateOf(currentMinuteStr) }
 
-        val memberAccounts = accounts.filter { it.memberId == transferMemberId && (it.categoryType == "CURRENT_ASSETS" || it.categoryType == "CURRENT_LIABILITIES") }
+        val memberAccounts = accounts.filter { it.memberId == transferMemberId }
 
         // Auto-select source and destination accounts
         LaunchedEffect(transferMemberId, memberAccounts) {
@@ -1755,7 +1755,7 @@ fun FinancialLedgerView(viewModel: AppViewModel, modifier: Modifier = Modifier) 
                                                 modifier = Modifier.weight(1f)
                                             )
                                             Text(
-                                                text = if (item.isAssetImpact) "+$${String.format("%.2f", item.amount)}" else "-$${String.format("%.2f", item.amount)}",
+                                                text = if (item.isAssetImpact) "+₹${String.format("%.2f", item.amount)}" else "-₹${String.format("%.2f", item.amount)}",
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (item.isAssetImpact) SuccessGreen else AlertRed

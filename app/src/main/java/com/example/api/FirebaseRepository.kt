@@ -12,13 +12,15 @@ object FirebaseRepository {
 
     fun updateUsers(newUsers: Map<String, UserRemote>) {
         synchronized(lock) {
-            // Create a completely deep copy/fresh map copy of UserRemote to prevent reference leaks and concurrent modifications in downstream collections/UI
-            val copy = newUsers.mapValues { (_, user) ->
-                user.copy(
+            // Merge the incoming users into the existing state map to prevent overwriting
+            // of local user's data during real-time friend updates.
+            val currentMap = _usersState.value.toMutableMap()
+            newUsers.forEach { (username, user) ->
+                currentMap[username] = user.copy(
                     todaysFocusRecords = user.todaysFocusRecords?.toList() ?: emptyList()
                 )
             }
-            _usersState.value = copy
+            _usersState.value = currentMap
         }
     }
 

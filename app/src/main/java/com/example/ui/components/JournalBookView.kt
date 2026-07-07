@@ -91,9 +91,11 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val defaultJournalView by viewModel.defaultJournalView.collectAsState()
     var currentJournalTab by remember(defaultJournalView) { mutableStateOf(defaultJournalView) }
 
+    var selectedOnThisDayDayMonth by remember { mutableStateOf(SimpleDateFormat("MM-dd", Locale.US).format(Date())) }
+    var mapScrollToDate by remember { mutableStateOf<String?>(null) }
+
     // Custom Full-Screen Editor State
     var showEditorScreen by remember { mutableStateOf(false) }
-    var showGooglePhotosDialog by remember { mutableStateOf(false) }
     var activeEditingEntryId by remember { mutableStateOf<Int?>(null) }
     var editingTitle by remember { mutableStateOf("") }
     var editingTextValue by remember { mutableStateOf(TextFieldValue("")) }
@@ -164,9 +166,6 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         if (success && activePhotoFile != null) {
             val optimizedFile = MediaCompressionHelper.compressImageFile(context, activePhotoFile!!)
             editingAttachments = editingAttachments + "photo:${optimizedFile.absolutePath}"
-            
-            // Trigger 2-way sync: automatically upload the captured photo to Google Photos
-            viewModel.uploadJournalPhotoToGooglePhotos(context, optimizedFile)
         }
     }
 
@@ -710,24 +709,6 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Google Photos integration sync button
-                        IconButton(
-                            onClick = {
-                                showGooglePhotosDialog = true
-                            },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color(0xFF1B2C3F))
-                                .size(40.dp)
-                                .testTag("google_photos_sync_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Photo,
-                                contentDescription = "Google Photos Integration",
-                                tint = Color(0xFF4285F4)
-                            )
-                        }
-
                         var isSummarizing by remember { mutableStateOf(false) }
                         
                         IconButton(
@@ -792,6 +773,92 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                 .testTag("create_diary_btn")
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Add Diary entry", tint = Color.Black)
+                        }
+
+                        // Calendar date picker button
+                        IconButton(
+                            onClick = {
+                                val calendar = java.util.Calendar.getInstance()
+                                val datePickerDialog = android.app.DatePickerDialog(
+                                    context,
+                                    { _, year, month, dayOfMonth ->
+                                        val selectedCal = java.util.Calendar.getInstance().apply {
+                                            set(year, month, dayOfMonth)
+                                        }
+                                        val selectedDateStr = String.format(java.util.Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth)
+                                        
+                                        when (currentJournalTab) {
+                                            "Timeline" -> {
+                                                val index = entries.indexOfFirst { it.dateString == selectedDateStr }
+                                                if (index != -1) {
+                                                    scope.launch {
+                                                        timelineListState.animateScrollToItem(index)
+                                                    }
+                                                    Toast.makeText(context, "Scrolled to entry for $selectedDateStr", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    val closestIndex = entries.indices.minByOrNull { i ->
+                                                        val entryDate = try {
+                                                            SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(entries[i].dateString)
+                                                        } catch (e: Exception) { null }
+                                                        if (entryDate != null) {
+                                                            Math.abs(entryDate.time - selectedCal.timeInMillis)
+                                                        } else {
+                                                            Long.MAX_VALUE
+                                                        }
+                                                    } ?: -1
+                                                    if (closestIndex != -1) {
+                                                        scope.launch {
+                                                            timelineListState.animateScrollToItem(closestIndex)
+                                                        }
+                                                        val closestDate = entries[closestIndex].dateString
+                                                        Toast.makeText(context, "No entry on $selectedDateStr. Scrolled to closest ($closestDate)", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "No journal entries found.", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                            "Monthly" -> {
+                                                val currentCal = java.util.Calendar.getInstance()
+                                                val yearDiff = selectedCal.get(java.util.Calendar.YEAR) - currentCal.get(java.util.Calendar.YEAR)
+                                                val monthDiff = selectedCal.get(java.util.Calendar.MONTH) - currentCal.get(java.util.Calendar.MONTH)
+                                                val totalMonthOffset = yearDiff * 12 + monthDiff
+                                                val targetIndex = totalMonthOffset + 60
+                                                if (targetIndex in 0..72) {
+                                                    scope.launch {
+                                                        monthlyListState.animateScrollToItem(targetIndex)
+                                                    }
+                                                    val monthName = selectedCal.getDisplayName(java.util.Calendar.MONTH, java.util.Calendar.LONG, java.util.Locale.getDefault()) ?: ""
+                                                    Toast.makeText(context, "Scrolled to $monthName ${selectedCal.get(java.util.Calendar.YEAR)}", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "Selected month is outside the 5-year range.", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                            "On This Day" -> {
+                                                selectedOnThisDayDayMonth = String.format(java.util.Locale.US, "%02d-%02d", month + 1, dayOfMonth)
+                                                Toast.makeText(context, "Viewing anniversary for ${selectedOnThisDayDayMonth}", Toast.LENGTH_SHORT).show()
+                                            }
+                                            "Map View" -> {
+                                                mapScrollToDate = selectedDateStr
+                                            }
+                                        }
+                                    },
+                                    calendar.get(java.util.Calendar.YEAR),
+                                    calendar.get(java.util.Calendar.MONTH),
+                                    calendar.get(java.util.Calendar.DAY_OF_MONTH)
+                                )
+                                datePickerDialog.show()
+                            },
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(Color(0xFF232D37))
+                                .size(40.dp)
+                                .testTag("journal_calendar_picker_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DateRange,
+                                contentDescription = "Select Date",
+                                tint = WaterBlue
+                            )
                         }
                     }
                 }
@@ -1358,20 +1425,52 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
 
                             "On This Day" -> {
                                 Column {
-                                    Text(
-                                        text = "DOCUMENTED ON THIS DAY",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Gray,
-                                        modifier = Modifier.padding(bottom = 12.dp)
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "DOCUMENTED ON ANNIVERSARY ($selectedOnThisDayDayMonth)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Gray
+                                        )
+                                        
+                                        val todayDayMonth = remember { SimpleDateFormat("MM-dd", Locale.US).format(Date()) }
+                                        if (selectedOnThisDayDayMonth != todayDayMonth) {
+                                            TextButton(
+                                                onClick = {
+                                                    selectedOnThisDayDayMonth = todayDayMonth
+                                                    Toast.makeText(context, "Reset to Today's anniversary", Toast.LENGTH_SHORT).show()
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Refresh,
+                                                        contentDescription = "Reset to Today's anniversary",
+                                                        tint = WaterBlue,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = "Reset to Today",
+                                                        color = WaterBlue,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
 
-                                    val currentDayMonth = SimpleDateFormat("MM-dd", Locale.US).format(Date())
-                                    val matchedAnniversaryEntries = entries.filter { it.dateString.endsWith(currentDayMonth) }
+                                    val matchedAnniversaryEntries = entries.filter { it.dateString.endsWith(selectedOnThisDayDayMonth) }
 
                                     if (matchedAnniversaryEntries.isEmpty()) {
                                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text("No historical records documented on today's calendar day ($currentDayMonth).", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                            Text("No historical records documented on anniversary day ($selectedOnThisDayDayMonth).", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
                                         }
                                     } else {
                                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1406,6 +1505,10 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                     entries = entries,
                                     onEntryClick = { entry ->
                                         viewingEntry = entry
+                                    },
+                                    scrollToDate = mapScrollToDate,
+                                    onScrollToDateHandled = {
+                                        mapScrollToDate = null
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -1503,128 +1606,7 @@ fun JournalBookView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    if (showGooglePhotosDialog) {
-        val syncStatus by viewModel.googlePhotosSyncStatus.collectAsState()
-        var sandboxMode by remember { mutableStateOf(true) }
 
-        AlertDialog(
-            onDismissRequest = { showGooglePhotosDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CloudSync,
-                        contentDescription = null,
-                        tint = Color(0xFF4285F4),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Google Photos Sync", color = Color.White)
-                }
-            },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Connect Google Photos to automatically organize your journals by dates, times, and EXIF locations! Empty days will automatically create new memories with location maps, and existing ones will attach the photos.",
-                        color = Color.LightGray,
-                        fontSize = 14.sp
-                    )
-
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
-
-                    // Sandbox Mode Toggle Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.White.copy(alpha = 0.05f))
-                            .clickable { sandboxMode = !sandboxMode }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Use Sandbox Simulator", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            Text("Imports gorgeous pre-configured photo memories with real coordinates to quickly test this feature.", color = Color.Gray, fontSize = 11.sp)
-                        }
-                        Switch(
-                            checked = sandboxMode,
-                            onCheckedChange = { sandboxMode = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = WaterBlue,
-                                checkedTrackColor = WaterBlue.copy(alpha = 0.5f)
-                            )
-                        )
-                    }
-
-                    // Sync status display
-                    if (syncStatus != "Idle") {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.3f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    if (syncStatus.startsWith("Successfully") || syncStatus.startsWith("Error")) {
-                                        Icon(
-                                            imageVector = if (syncStatus.startsWith("Error")) Icons.Default.Error else Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = if (syncStatus.startsWith("Error")) Color.Red else Color.Green,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    } else {
-                                        CircularProgressIndicator(
-                                            color = WaterBlue,
-                                            modifier = Modifier.size(14.dp),
-                                            strokeWidth = 1.5.dp
-                                        )
-                                    }
-                                    Text(
-                                        text = if (syncStatus.startsWith("Successfully")) "Sync Complete" else if (syncStatus.startsWith("Error")) "Sync Error" else "Sync Progress",
-                                        color = Color.White,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Text(
-                                    text = syncStatus,
-                                    color = Color.LightGray,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.syncGooglePhotos(context, sandboxMode) { authIntent ->
-                            context.startActivity(authIntent)
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = WaterBlue, contentColor = Color.Black),
-                    enabled = !syncStatus.startsWith("Starting") && !syncStatus.startsWith("Authorizing") && !syncStatus.startsWith("Downloading") && !syncStatus.startsWith("Retrieving")
-                ) {
-                    Text("Start Sync")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showGooglePhotosDialog = false }) {
-                    Text("Close", color = Color.Gray)
-                }
-            },
-            containerColor = SurfaceCard
-        )
-    }
 
     // Immersive Fullscreen Reading View Page to inspect entry details with fully active multi-format inbuilt players
     if (viewingEntry != null) {
@@ -2515,10 +2497,38 @@ fun createSinglePinBitmap(context: android.content.Context): org.mapsforge.core.
     return org.mapsforge.map.android.graphics.AndroidGraphicFactory.convertToBitmap(drawable)
 }
 
+fun createMyLocationPinBitmap(context: android.content.Context): org.mapsforge.core.graphics.Bitmap {
+    val density = context.resources.displayMetrics.density
+    val size = (28 * density).toInt()
+    val androidBitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(androidBitmap)
+
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.parseColor("#10FA70")
+        style = android.graphics.Paint.Style.FILL
+    }
+    paint.alpha = 60
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, paint)
+
+    paint.alpha = 255
+    paint.color = android.graphics.Color.parseColor("#10FA70")
+    canvas.drawCircle(size / 2f, size / 2f, size / 4f, paint)
+
+    paint.color = android.graphics.Color.WHITE
+    paint.style = android.graphics.Paint.Style.STROKE
+    paint.strokeWidth = 1.5f * density
+    canvas.drawCircle(size / 2f, size / 2f, size / 4f, paint)
+
+    val drawable = android.graphics.drawable.BitmapDrawable(context.resources, androidBitmap)
+    return org.mapsforge.map.android.graphics.AndroidGraphicFactory.convertToBitmap(drawable)
+}
+
 fun updateMforgeMarkers(
     mapView: org.mapsforge.map.android.view.MapView,
     context: android.content.Context,
     markersList: List<EntryMarker>,
+    myLocation: org.mapsforge.core.model.LatLong?,
     onClusterClick: (List<JournalEntry>, String) -> Unit
 ) {
     val zoomLevel = mapView.model.mapViewPosition.zoomLevel
@@ -2553,6 +2563,25 @@ fun updateMforgeMarkers(
         }
         layers.add(m)
     }
+
+    if (myLocation != null) {
+        val locBitmap = createMyLocationPinBitmap(context)
+        val locMarker = object : org.mapsforge.map.layer.overlay.Marker(myLocation, locBitmap, 0, -locBitmap.getHeight() / 2) {
+            override fun onTap(
+                tapLatLong: org.mapsforge.core.model.LatLong?,
+                viewPosition: org.mapsforge.core.model.Point?,
+                tapPoint: org.mapsforge.core.model.Point?
+            ): Boolean {
+                if (contains(viewPosition, tapPoint)) {
+                    Toast.makeText(context, "You are here!", Toast.LENGTH_SHORT).show()
+                    return true
+                }
+                return false
+            }
+        }
+        layers.add(locMarker)
+    }
+
     mapView.layerManager.redrawLayers()
 }
 
@@ -2561,10 +2590,14 @@ fun JournalMapView(
     viewModel: AppViewModel,
     entries: List<JournalEntry>,
     onEntryClick: (JournalEntry) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    scrollToDate: String? = null,
+    onScrollToDateHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var mforgeViewRef by remember { mutableStateOf<org.mapsforge.map.android.view.MapView?>(null) }
+    var userLocationLatLong by remember { mutableStateOf<org.mapsforge.core.model.LatLong?>(null) }
+    val currentMyLocation = androidx.compose.runtime.rememberUpdatedState(userLocationLatLong)
 
     val isDownloaded = remember { mutableStateOf(MapDownloadManager.isMapFileDownloaded(context, "southern")) }
     val isDownloading by MapDownloadManager.isDownloading.collectAsState()
@@ -2580,7 +2613,9 @@ fun JournalMapView(
         if (fineOk || coarseOk) {
             Toast.makeText(context, "Pinpointing GPS...", Toast.LENGTH_SHORT).show()
             triggerFetchLocation(context) { lat, lng, city ->
-                mforgeViewRef?.setCenter(org.mapsforge.core.model.LatLong(lat, lng))
+                val userLoc = org.mapsforge.core.model.LatLong(lat, lng)
+                userLocationLatLong = userLoc
+                mforgeViewRef?.setCenter(userLoc)
                 mforgeViewRef?.setZoomLevel(14.toByte())
                 Toast.makeText(context, "Centered at $city", Toast.LENGTH_SHORT).show()
             }
@@ -2616,6 +2651,49 @@ fun JournalMapView(
                     } else null
                 } else null
             } else null
+        }
+    }
+
+    LaunchedEffect(markers, userLocationLatLong, mforgeViewRef) {
+        val map = mforgeViewRef ?: return@LaunchedEffect
+        updateMforgeMarkers(map, context, markers, userLocationLatLong) { entries, name ->
+            selectedLocationEntries = entries
+            selectedLocationName = name
+            showLocationEntriesDialog = true
+        }
+    }
+
+    LaunchedEffect(scrollToDate, markers, mforgeViewRef) {
+        val map = mforgeViewRef ?: return@LaunchedEffect
+        if (!scrollToDate.isNullOrEmpty() && markers.isNotEmpty()) {
+            val matchedMarker = markers.find { it.entry.dateString == scrollToDate }
+            if (matchedMarker != null) {
+                map.setCenter(org.mapsforge.core.model.LatLong(matchedMarker.lat, matchedMarker.lng))
+                map.setZoomLevel(14.toByte())
+                Toast.makeText(context, "Centered map on entry from $scrollToDate", Toast.LENGTH_SHORT).show()
+            } else {
+                val closestMarker = markers.minByOrNull { m ->
+                    val mDate = try {
+                        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(m.entry.dateString)
+                    } catch (e: Exception) { null }
+                    val targetDate = try {
+                        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(scrollToDate)
+                    } catch (e: Exception) { null }
+                    if (mDate != null && targetDate != null) {
+                        Math.abs(mDate.time - targetDate.time)
+                    } else {
+                        Long.MAX_VALUE
+                    }
+                }
+                if (closestMarker != null) {
+                    map.setCenter(org.mapsforge.core.model.LatLong(closestMarker.lat, closestMarker.lng))
+                    map.setZoomLevel(14.toByte())
+                    Toast.makeText(context, "Centered map on closest entry (${closestMarker.entry.dateString})", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "No location-tagged entries found.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            onScrollToDateHandled()
         }
     }
 
@@ -2764,6 +2842,7 @@ fun JournalMapView(
                             getMapScaleBar().setVisible(true)
                             getMapZoomControls().setZoomLevelMin(5.toByte())
                             getMapZoomControls().setZoomLevelMax(20.toByte())
+                            getMapZoomControls().setShowMapZoomControls(false)
 
                             val tileCache = org.mapsforge.map.android.util.AndroidUtil.createTileCache(
                                 ctx,
@@ -2797,7 +2876,7 @@ fun JournalMapView(
                             layerManager.layers.add(tileRendererLayer)
 
                             // Add initial markers with clustering
-                            updateMforgeMarkers(this, ctx, markers) { entries, name ->
+                            updateMforgeMarkers(this, ctx, markers, currentMyLocation.value) { entries, name ->
                                 selectedLocationEntries = entries
                                 selectedLocationName = name
                                 showLocationEntriesDialog = true
@@ -2812,7 +2891,7 @@ fun JournalMapView(
                                     if (currentZoom != lastZoom) {
                                         lastZoom = currentZoom
                                         handler.post {
-                                            updateMforgeMarkers(this@apply, ctx, markers) { entries, name ->
+                                            updateMforgeMarkers(this@apply, ctx, markers, currentMyLocation.value) { entries, name ->
                                                 selectedLocationEntries = entries
                                                 selectedLocationName = name
                                                 showLocationEntriesDialog = true
@@ -2873,7 +2952,9 @@ fun JournalMapView(
                         } else {
                             Toast.makeText(context, "Pinpointing GPS...", Toast.LENGTH_SHORT).show()
                             triggerFetchLocation(context) { lat, lng, city ->
-                                mforgeViewRef?.setCenter(org.mapsforge.core.model.LatLong(lat, lng))
+                                val userLoc = org.mapsforge.core.model.LatLong(lat, lng)
+                                userLocationLatLong = userLoc
+                                mforgeViewRef?.setCenter(userLoc)
                                 mforgeViewRef?.setZoomLevel(14.toByte())
                                 Toast.makeText(context, "Centered at $city", Toast.LENGTH_SHORT).show()
                             }
