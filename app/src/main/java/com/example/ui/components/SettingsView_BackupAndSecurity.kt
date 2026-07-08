@@ -10,8 +10,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -630,6 +634,942 @@ fun AppBlocksSettingsSection() {
             }
         }
         
+        // Quick App Toggles for Instagram and YouTube
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0E)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("QUICK APP TOGGLES", color = Color.LightGray, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                
+                // Instagram Toggle
+                val isInstaBlocked = blockedApps.contains("com.instagram.android")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppListIcon(pkg = "com.instagram.android")
+                        }
+                    }
+                    Switch(
+                        checked = isInstaBlocked,
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                AppBlockHelper.addBlockedApp(context, "com.instagram.android")
+                            } else {
+                                AppBlockHelper.removeBlockedApp(context, "com.instagram.android")
+                            }
+                            blockedApps = AppBlockHelper.getBlockedApps(context)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = WaterBlue,
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                }
+
+                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.5f))
+
+                // YouTube Toggle
+                val isYoutubeBlocked = blockedApps.contains("com.google.android.youtube")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppListIcon(pkg = "com.google.android.youtube")
+                        }
+                    }
+                    Switch(
+                        checked = isYoutubeBlocked,
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                AppBlockHelper.addBlockedApp(context, "com.google.android.youtube")
+                            } else {
+                                AppBlockHelper.removeBlockedApp(context, "com.google.android.youtube")
+                            }
+                            blockedApps = AppBlockHelper.getBlockedApps(context)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = WaterBlue,
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        )
+                    )
+                }
+            }
+        }
+
+        // Instagram Advanced Blocker Settings Card
+        var useSelectiveIg by remember { mutableStateOf(AppBlockHelper.isIgSelectiveBlockingEnabled(context)) }
+        var isIgReelsBlocked by remember { mutableStateOf(AppBlockHelper.isIgReelsBlocked(context)) }
+        var isIgStoriesBlocked by remember { mutableStateOf(AppBlockHelper.isIgStoriesBlocked(context)) }
+        var isIgExploreBlocked by remember { mutableStateOf(AppBlockHelper.isIgExploreBlocked(context)) }
+        var isIgAllowSharedReels by remember { mutableStateOf(AppBlockHelper.isIgAllowSharedReels(context)) }
+        var isIgFeedScrollLimit by remember { mutableStateOf(AppBlockHelper.isIgFeedScrollLimit(context)) }
+        var isIgReelsMuteAudio by remember { mutableStateOf(AppBlockHelper.isIgReelsMuteAudio(context)) }
+
+        // YouTube Advanced Blocker Settings Card
+        var useSelectiveYt by remember { mutableStateOf(AppBlockHelper.isYtSelectiveBlockingEnabled(context)) }
+        var isYtShortsBlocked by remember { mutableStateOf(AppBlockHelper.isYtShortsBlocked(context)) }
+        var isYtSearchBlocked by remember { mutableStateOf(AppBlockHelper.isYtSearchBlocked(context)) }
+        var isYtCommentsBlocked by remember { mutableStateOf(AppBlockHelper.isYtCommentsBlocked(context)) }
+        var isYtOnlyAllowApprovedChannels by remember { mutableStateOf(AppBlockHelper.isYtOnlyAllowApprovedChannels(context)) }
+        var ytApprovedChannels by remember { mutableStateOf(AppBlockHelper.getYtApprovedChannels(context)) }
+
+        // Snapchat Advanced Blocker Settings Card
+        var useSelectiveSnap by remember { mutableStateOf(AppBlockHelper.isSnapSelectiveBlockingEnabled(context)) }
+        var isSnapSpotlightBlocked by remember { mutableStateOf(AppBlockHelper.isSnapSpotlightBlocked(context)) }
+        var isSnapMapBlocked by remember { mutableStateOf(AppBlockHelper.isSnapMapBlocked(context)) }
+        var isSnapDiscoverBlocked by remember { mutableStateOf(AppBlockHelper.isSnapDiscoverBlocked(context)) }
+
+        // Facebook Advanced Blocker Settings Card
+        var useSelectiveFb by remember { mutableStateOf(AppBlockHelper.isFbSelectiveBlockingEnabled(context)) }
+        var isFbReelsBlocked by remember { mutableStateOf(AppBlockHelper.isFbReelsBlocked(context)) }
+        var isFbWatchBlocked by remember { mutableStateOf(AppBlockHelper.isFbWatchBlocked(context)) }
+        var isFbStoriesBlocked by remember { mutableStateOf(AppBlockHelper.isFbStoriesBlocked(context)) }
+        
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF09090C)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFFE1306C).copy(alpha = 0.25f)),
+            modifier = Modifier.fillMaxWidth().testTag("instagram_advanced_blocker_card")
+        ) {
+            Column(
+                modifier = Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF833AB4).copy(alpha = 0.08f), Color(0xFFE1306C).copy(alpha = 0.04f), Color.Transparent)
+                        )
+                    )
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Title and Icon
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF833AB4), Color(0xFFF77737))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Instagram Blocker",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "INSTAGRAM SURGICAL BLOCKER",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            letterSpacing = 0.8.sp
+                        )
+                        Text(
+                            text = "Fine-grained controls for specific Instagram features.",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.4f))
+
+                // 1. Master Toggle: Use Selective blocking
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("Selective Sub-Feature Blocking", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("Bypasses full app blocking to allow Chats while enforcing specific limits below.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                    }
+                    Switch(
+                        checked = useSelectiveIg,
+                        onCheckedChange = { checked ->
+                            useSelectiveIg = checked
+                            AppBlockHelper.setIgSelectiveBlockingEnabled(context, checked)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color(0xFFE1306C),
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        ),
+                        modifier = Modifier.testTag("ig_selective_blocking_switch")
+                    )
+                }
+
+                if (useSelectiveIg) {
+                    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+
+                    // 2. Block Reels
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Surgical Reels Blocker", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Prevents scrolling or viewing Reels completely. Instantly closes or reverts back.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isIgReelsBlocked,
+                            onCheckedChange = { checked ->
+                                isIgReelsBlocked = checked
+                                AppBlockHelper.setIgReelsBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFE1306C),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("ig_block_reels_switch")
+                        )
+                    }
+
+                    // 3. Block Stories
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Stories", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Hides/interdicts user Stories completely. Story viewer is closed on click.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isIgStoriesBlocked,
+                            onCheckedChange = { checked ->
+                                isIgStoriesBlocked = checked
+                                AppBlockHelper.setIgStoriesBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFE1306C),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("ig_block_stories_switch")
+                        )
+                    }
+
+                    // 4. Block Explore Tab
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Explore & Search Tab", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Redirects away from the Explore search grid to prevent visual doomscrolling.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isIgExploreBlocked,
+                            onCheckedChange = { checked ->
+                                isIgExploreBlocked = checked
+                                AppBlockHelper.setIgExploreBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFE1306C),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("ig_block_explore_switch")
+                        )
+                    }
+
+                    // 5. Allow Shared Reels
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Allow Shared Reel in Messages", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Enables viewing a single reel sent in DMs. Scrolling/swiping to next is instantly blocked & returns to chat.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isIgAllowSharedReels,
+                            onCheckedChange = { checked ->
+                                isIgAllowSharedReels = checked
+                                AppBlockHelper.setIgAllowSharedReels(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFE1306C),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("ig_allow_shared_reels_switch")
+                        )
+                    }
+
+                    // 6. Feed Scroll Limiter
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Feed Scroll Limiter", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Quota: maximum of 5 scroll gestures in main feed per Focus phase before closure.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isIgFeedScrollLimit,
+                            onCheckedChange = { checked ->
+                                isIgFeedScrollLimit = checked
+                                AppBlockHelper.setIgFeedScrollLimit(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFE1306C),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("ig_feed_scroll_limit_switch")
+                        )
+                    }
+
+                    // 7. Auto-Mute Reels Audio
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto-Mute Reels Audio", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Eliminates auditory attention traps by forcing Reel mutes on launch.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isIgReelsMuteAudio,
+                            onCheckedChange = { checked ->
+                                isIgReelsMuteAudio = checked
+                                AppBlockHelper.setIgReelsMuteAudio(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFE1306C),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("ig_mute_reels_audio_switch")
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // YouTube Advanced Blocker Settings Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF09090C)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFFFF0000).copy(alpha = 0.25f)),
+            modifier = Modifier.fillMaxWidth().testTag("youtube_advanced_blocker_card")
+        ) {
+            Column(
+                modifier = Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFFFF0000).copy(alpha = 0.08f), Color(0xFF990000).copy(alpha = 0.04f), Color.Transparent)
+                        )
+                    )
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFFFF0000), Color(0xFF990000))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "YouTube Blocker",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "YOUTUBE SURGICAL BLOCKER",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            letterSpacing = 0.8.sp
+                        )
+                        Text(
+                            text = "Fine-grained controls for specific YouTube features.",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.4f))
+
+                // 1. Master Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("Selective Sub-Feature Blocking", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("Bypasses full app blocking to allow regular video play while restricting specific distractions.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                    }
+                    Switch(
+                        checked = useSelectiveYt,
+                        onCheckedChange = { checked ->
+                            useSelectiveYt = checked
+                            AppBlockHelper.setYtSelectiveBlockingEnabled(context, checked)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color(0xFFFF0000),
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        ),
+                        modifier = Modifier.testTag("yt_selective_blocking_switch")
+                    )
+                }
+
+                if (useSelectiveYt) {
+                    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+
+                    // 2. Block Shorts
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block YouTube Shorts", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Instantly intercepts and blocks YouTube Shorts swipe-feeds.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isYtShortsBlocked,
+                            onCheckedChange = { checked ->
+                                isYtShortsBlocked = checked
+                                AppBlockHelper.setYtShortsBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFF0000),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("yt_block_shorts_switch")
+                        )
+                    }
+
+                    // 3. Block Search
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Search Feed", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Prevents manual searching of videos during active focus periods.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isYtSearchBlocked,
+                            onCheckedChange = { checked ->
+                                isYtSearchBlocked = checked
+                                AppBlockHelper.setYtSearchBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFF0000),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("yt_block_search_switch")
+                        )
+                    }
+
+                    // 4. Block Comments
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Hide Comments Section", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Blocks view of the YouTube comments pane to stop reading/writing distractions.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isYtCommentsBlocked,
+                            onCheckedChange = { checked ->
+                                isYtCommentsBlocked = checked
+                                AppBlockHelper.setYtCommentsBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFF0000),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("yt_block_comments_switch")
+                        )
+                    }
+
+                    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+
+                    // 5. Only Allow Whitelisted Channels
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Only Allow Whitelisted Channels", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Blocks play/view of any video except those from your approved channels list below.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isYtOnlyAllowApprovedChannels,
+                            onCheckedChange = { checked ->
+                                isYtOnlyAllowApprovedChannels = checked
+                                AppBlockHelper.setYtOnlyAllowApprovedChannels(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFF0000),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("yt_only_allow_approved_channels_switch")
+                        )
+                    }
+
+                    if (isYtOnlyAllowApprovedChannels) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Whitelisted Channel Names (comma separated):",
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            OutlinedTextField(
+                                value = ytApprovedChannels,
+                                onValueChange = { newValue ->
+                                    ytApprovedChannels = newValue
+                                    AppBlockHelper.setYtApprovedChannels(context, newValue)
+                                },
+                                placeholder = {
+                                    Text("e.g. Marques Brownlee, Kurzgesagt, TEDx", color = Color.DarkGray, fontSize = 11.sp)
+                                },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("yt_approved_channels_input"),
+                                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = Color(0xFFFF0000),
+                                    unfocusedBorderColor = Color.DarkGray,
+                                    focusedContainerColor = Color(0xFF141419),
+                                    unfocusedContainerColor = Color(0xFF0F0F12),
+                                    cursorColor = Color(0xFFFF0000)
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            Text(
+                                text = "Matches are case-insensitive and allow partial matches. Enter full channel names or keywords separated by commas.",
+                                color = Color.Gray,
+                                fontSize = 9.sp,
+                                lineHeight = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Snapchat Advanced Blocker Settings Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF09090C)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFFFFFC00).copy(alpha = 0.25f)),
+            modifier = Modifier.fillMaxWidth().testTag("snapchat_advanced_blocker_card")
+        ) {
+            Column(
+                modifier = Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFFFFFC00).copy(alpha = 0.05f), Color(0xFFFFFC00).copy(alpha = 0.02f), Color.Transparent)
+                        )
+                    )
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFFFC00)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Snapchat Blocker",
+                            tint = Color.Black,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "SNAPCHAT SURGICAL BLOCKER",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            letterSpacing = 0.8.sp
+                        )
+                        Text(
+                            text = "Fine-grained controls for specific Snapchat features.",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.4f))
+
+                // 1. Master Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("Selective Sub-Feature Blocking", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("Bypasses full app blocking to allow chat, viewing & uploading snaps while blocking feeds.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                    }
+                    Switch(
+                        checked = useSelectiveSnap,
+                        onCheckedChange = { checked ->
+                            useSelectiveSnap = checked
+                            AppBlockHelper.setSnapSelectiveBlockingEnabled(context, checked)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color(0xFFFFFC00),
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        ),
+                        modifier = Modifier.testTag("snap_selective_blocking_switch")
+                    )
+                }
+
+                if (useSelectiveSnap) {
+                    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+
+                    // 2. Block Spotlight
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Snapchat Spotlight", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Prevents viewing or scrolling the Spotlight vertical video feeds.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isSnapSpotlightBlocked,
+                            onCheckedChange = { checked ->
+                                isSnapSpotlightBlocked = checked
+                                AppBlockHelper.setSnapSpotlightBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFFFC00),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("snap_block_spotlight_switch")
+                        )
+                    }
+
+                    // 3. Block Map
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Snap Map", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Restricts access to the location map tab to keep focus private and active.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isSnapMapBlocked,
+                            onCheckedChange = { checked ->
+                                isSnapMapBlocked = checked
+                                AppBlockHelper.setSnapMapBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFFFC00),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("snap_block_map_switch")
+                        )
+                    }
+
+                    // 4. Block Discover & Stories
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Stories & Discover Feeds", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Hides user Stories, sub feeds, and show discoveries completely.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isSnapDiscoverBlocked,
+                            onCheckedChange = { checked ->
+                                isSnapDiscoverBlocked = checked
+                                AppBlockHelper.setSnapDiscoverBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFFFFFC00),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("snap_block_discover_switch")
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Facebook Advanced Blocker Settings Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF09090C)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, Color(0xFF1877F2).copy(alpha = 0.25f)),
+            modifier = Modifier.fillMaxWidth().testTag("facebook_advanced_blocker_card")
+        ) {
+            Column(
+                modifier = Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color(0xFF1877F2).copy(alpha = 0.08f), Color(0xFF1877F2).copy(alpha = 0.04f), Color.Transparent)
+                        )
+                    )
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1877F2)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ThumbUp,
+                            contentDescription = "Facebook Blocker",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "FACEBOOK SURGICAL BLOCKER",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            letterSpacing = 0.8.sp
+                        )
+                        Text(
+                            text = "Fine-grained controls for specific Facebook features.",
+                            fontSize = 10.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.4f))
+
+                // 1. Master Toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("Selective Sub-Feature Blocking", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Text("Bypasses full app blocking to allow messaging/posts while blocking feeds & videos.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                    }
+                    Switch(
+                        checked = useSelectiveFb,
+                        onCheckedChange = { checked ->
+                            useSelectiveFb = checked
+                            AppBlockHelper.setFbSelectiveBlockingEnabled(context, checked)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = Color(0xFF1877F2),
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.DarkGray
+                        ),
+                        modifier = Modifier.testTag("fb_selective_blocking_switch")
+                    )
+                }
+
+                if (useSelectiveFb) {
+                    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+
+                    // 2. Block Reels
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Facebook Reels", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Prevents viewing or scrolling short vertical video Reels.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isFbReelsBlocked,
+                            onCheckedChange = { checked ->
+                                isFbReelsBlocked = checked
+                                AppBlockHelper.setFbReelsBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFF1877F2),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("fb_block_reels_switch")
+                        )
+                    }
+
+                    // 3. Block Watch
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Watch & Video Feed", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Prevents entering the Watch tab or video panels entirely.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isFbWatchBlocked,
+                            onCheckedChange = { checked ->
+                                isFbWatchBlocked = checked
+                                AppBlockHelper.setFbWatchBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFF1877F2),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("fb_block_watch_switch")
+                        )
+                    }
+
+                    // 4. Block Stories
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Block Stories", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("Omit & hide Facebook Stories and story trays on the screen.", color = Color.Gray, fontSize = 10.sp, lineHeight = 13.sp)
+                        }
+                        Switch(
+                            checked = isFbStoriesBlocked,
+                            onCheckedChange = { checked ->
+                                isFbStoriesBlocked = checked
+                                AppBlockHelper.setFbStoriesBlocked(context, checked)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.Black,
+                                checkedTrackColor = Color(0xFF1877F2),
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.DarkGray
+                            ),
+                            modifier = Modifier.testTag("fb_block_stories_switch")
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
         // 1. Active Block Rules Card
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFF0C0C0E)),

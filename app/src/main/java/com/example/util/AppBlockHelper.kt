@@ -7,6 +7,12 @@ import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import org.json.JSONArray
+import org.json.JSONObject
 
 object AppBlockHelper {
     private const val PREFS_NAME = "app_blocks_preferences"
@@ -15,6 +21,7 @@ object AppBlockHelper {
     private const val PREFIX_DAILY_LIMIT = "daily_limit_"
     private const val PREFIX_DAILY_USAGE = "daily_usage_"
     private const val PREFIX_SESSION_EXPIRY = "session_expiry_"
+    private const val PREFIX_DAILY_BYPASS = "daily_bypass_"
 
     // Default social apps
     val DEFAULT_BLOCKED_APPS = setOf("com.instagram.android", "com.snapchat.android")
@@ -37,7 +44,7 @@ object AppBlockHelper {
     fun initializeStrictAppsIfNeeded(context: Context) {
         val strictPrefs = context.getSharedPreferences("strict_mode_prefs", Context.MODE_PRIVATE)
         if (!strictPrefs.contains("strict_mode_enabled")) {
-            strictPrefs.edit().putBoolean("strict_mode_enabled", false).apply()
+            strictPrefs.edit().putBoolean("strict_mode_enabled", true).apply()
         }
         if (!strictPrefs.getBoolean("strict_apps_initialized_v2", false)) {
             val defaultStrict = mutableSetOf<String>()
@@ -111,16 +118,33 @@ object AppBlockHelper {
             val editor = prefs.edit()
             editor.putString(KEY_LAST_USAGE_DATE, today)
             
-            // Clear all accumulated daily usage seconds
+            // Clear all accumulated daily usage seconds and bypass states
             val allKeys = prefs.all
             for (key in allKeys.keys) {
                 if (key.startsWith(PREFIX_DAILY_USAGE)) {
                     editor.putInt(key, 0)
+                } else if (key.startsWith(PREFIX_DAILY_BYPASS)) {
+                    editor.putBoolean(key, false)
                 }
             }
             editor.apply()
             Log.d("AppBlockHelper", "Daily screen-time usage stats reset for a new day: $today")
         }
+    }
+
+    /**
+     * Set whether the daily limit has been bypassed for the day.
+     */
+    fun setDailyBypass(context: Context, packageName: String, bypassed: Boolean) {
+        getPrefs(context).edit().putBoolean(PREFIX_DAILY_BYPASS + packageName, bypassed).apply()
+    }
+
+    /**
+     * Check if the daily limit has been bypassed for the day.
+     */
+    fun isDailyBypassed(context: Context, packageName: String): Boolean {
+        checkAndResetDailyUsageIfNeeded(context)
+        return getPrefs(context).getBoolean(PREFIX_DAILY_BYPASS + packageName, false)
     }
 
     /**
@@ -143,11 +167,16 @@ object AppBlockHelper {
     fun setBlockedApps(context: Context, apps: Set<String>) {
         getPrefs(context).edit().putStringSet(KEY_BLOCKED_APPS, apps).apply()
         
-        // Also add any of these apps to strict mode blocked packages
+        // Update strict mode blocked packages to match exactly
         val strictPrefs = context.getSharedPreferences("strict_mode_prefs", Context.MODE_PRIVATE)
-        val strictSet = strictPrefs.getStringSet("blocked_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
-        strictSet.addAll(apps)
-        strictPrefs.edit().putStringSet("blocked_packages", strictSet).apply()
+        strictPrefs.edit().putStringSet("blocked_packages", apps).apply()
+    }
+
+    /**
+     * Checks if a package is actively present in the user's block list.
+     */
+    fun isAppInBlockList(context: Context, packageName: String): Boolean {
+        return getBlockedApps(context).contains(packageName)
     }
 
     /**
@@ -172,7 +201,8 @@ object AppBlockHelper {
      * Gets the configured daily limit in minutes for an app. Defaults to 30 mins.
      */
     fun getDailyLimitMinutes(context: Context, packageName: String): Int {
-        return getPrefs(context).getInt(PREFIX_DAILY_LIMIT + packageName, 30)
+        val defaultLimit = if (packageName == "com.instagram.android" || packageName == "com.snapchat.android" || packageName == "com.google.android.youtube") 45 else 30
+        return getPrefs(context).getInt(PREFIX_DAILY_LIMIT + packageName, defaultLimit)
     }
 
     /**
@@ -248,6 +278,10 @@ object AppBlockHelper {
     /**
      * Clear all sessions for manual resets.
      */
+    fun clearSessionForPackage(context: Context, packageName: String) {
+        getPrefs(context).edit().putLong(PREFIX_SESSION_EXPIRY + packageName, 0L).apply()
+    }
+
     fun clearSessions(context: Context) {
         val prefs = getPrefs(context)
         val editor = prefs.edit()
@@ -261,6 +295,12 @@ object AppBlockHelper {
     }
 
     fun isPackageBlockedInStrictMode(context: Context, packageName: String): Boolean {
+        // Strict mode only blocks apps selected in blocks and screen limits
+        val blockedApps = getBlockedApps(context)
+        if (!blockedApps.contains(packageName)) {
+            return false
+        }
+
         // 1. Exclude our own app
         if (packageName == context.packageName) return false
         
@@ -320,6 +360,31 @@ object AppBlockHelper {
         val isFocusing = (FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value) && FocusTimerManager.isFocusPhase.value
         if (!isFocusing) return
 
+        if (packageName == "com.instagram.android") {
+            val igPrefs = context.getSharedPreferences("instagram_blocker_prefs", Context.MODE_PRIVATE)
+            val useSelective = igPrefs.getBoolean("ig_use_selective_blocking", true)
+            if (useSelective) {
+                Log.d("AppBlocker", "Instagram opened. Bypassing full block because selective blocking is enabled.")
+                return
+            }
+        }
+        if (packageName == "com.google.android.youtube") {
+            val ytPrefs = context.getSharedPreferences("youtube_blocker_prefs", Context.MODE_PRIVATE)
+            val useSelective = ytPrefs.getBoolean("yt_use_selective_blocking", true)
+            if (useSelective) {
+                Log.d("AppBlocker", "YouTube opened. Bypassing full block because selective blocking is enabled.")
+                return
+            }
+        }
+        if (packageName == "com.snapchat.android") {
+            val snapPrefs = context.getSharedPreferences("snapchat_blocker_prefs", Context.MODE_PRIVATE)
+            val useSelective = snapPrefs.getBoolean("snap_use_selective_blocking", true)
+            if (useSelective) {
+                Log.d("AppBlocker", "Snapchat opened. Bypassing full block because selective blocking is enabled.")
+                return
+            }
+        }
+
         val strictPrefs = context.getSharedPreferences("strict_mode_prefs", Context.MODE_PRIVATE)
         val strictEnabled = strictPrefs.getBoolean("strict_mode_enabled", false)
 
@@ -365,6 +430,31 @@ object AppBlockHelper {
         }
 
         if (currentForegroundApp != null) {
+            if (currentForegroundApp == "com.instagram.android") {
+                val igPrefs = context.getSharedPreferences("instagram_blocker_prefs", Context.MODE_PRIVATE)
+                val useSelective = igPrefs.getBoolean("ig_use_selective_blocking", true)
+                if (useSelective) {
+                    Log.d("AppBlocker", "Instagram in foreground. Bypassing full block because selective blocking is enabled.")
+                    return
+                }
+            }
+            if (currentForegroundApp == "com.google.android.youtube") {
+                val ytPrefs = context.getSharedPreferences("youtube_blocker_prefs", Context.MODE_PRIVATE)
+                val useSelective = ytPrefs.getBoolean("yt_use_selective_blocking", true)
+                if (useSelective) {
+                    Log.d("AppBlocker", "YouTube in foreground. Bypassing full block because selective blocking is enabled.")
+                    return
+                }
+            }
+            if (currentForegroundApp == "com.snapchat.android") {
+                val snapPrefs = context.getSharedPreferences("snapchat_blocker_prefs", Context.MODE_PRIVATE)
+                val useSelective = snapPrefs.getBoolean("snap_use_selective_blocking", true)
+                if (useSelective) {
+                    Log.d("AppBlocker", "Snapchat in foreground. Bypassing full block because selective blocking is enabled.")
+                    return
+                }
+            }
+
             val isBlocked = if (strictEnabled) {
                 isPackageBlockedInStrictMode(context, currentForegroundApp)
             } else {
@@ -410,5 +500,283 @@ object AppBlockHelper {
             }
         }
         return appList.sortedBy { it.label.lowercase() }
+    }
+
+    /**
+     * Saves a notification that was blocked during Focus Mode.
+     */
+    fun saveBlockedNotification(context: Context, packageName: String, title: String, text: String) {
+        val prefs = context.getSharedPreferences("blocked_notifications_prefs", Context.MODE_PRIVATE)
+        val listStr = prefs.getString("blocked_list", "[]") ?: "[]"
+        try {
+            val jsonArray = JSONArray(listStr)
+            val jsonObject = JSONObject().apply {
+                put("packageName", packageName)
+                put("title", title)
+                put("text", text)
+                put("timestamp", System.currentTimeMillis())
+            }
+            jsonArray.put(jsonObject)
+            prefs.edit().putString("blocked_list", jsonArray.toString()).apply()
+            Log.d("AppBlockHelper", "Saved blocked notification for $packageName: $title")
+        } catch (e: Exception) {
+            Log.e("AppBlockHelper", "Error saving blocked notification: ${e.message}")
+        }
+    }
+
+    /**
+     * Releases (re-posts) all blocked notifications.
+     */
+    fun releaseBlockedNotifications(context: Context) {
+        val prefs = context.getSharedPreferences("blocked_notifications_prefs", Context.MODE_PRIVATE)
+        val listStr = prefs.getString("blocked_list", "[]") ?: "[]"
+        if (listStr == "[]") return
+
+        try {
+            val jsonArray = JSONArray(listStr)
+            if (jsonArray.length() == 0) return
+
+            Log.d("AppBlockHelper", "Releasing ${jsonArray.length()} blocked notifications!")
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            
+            // Ensure notification channel exists
+            val channelId = "released_notifications_channel"
+            val channelName = "Released Notifications"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "Notifications that were delayed during Focus Mode"
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val pm = context.packageManager
+
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val pkg = obj.optString("packageName", "")
+                val title = obj.optString("title", "Notification")
+                val text = obj.optString("text", "")
+                
+                val appLabel = try {
+                    val appInfo = pm.getApplicationInfo(pkg, 0)
+                    pm.getApplicationLabel(appInfo).toString()
+                } catch (e: Exception) {
+                    pkg.substringAfterLast('.')
+                }
+
+                // Create notification with the original content
+                val builder = NotificationCompat.Builder(context, channelId)
+                    .setSmallIcon(com.example.R.drawable.ic_launcher_foreground)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setSubText("Delayed: $appLabel")
+                    .setAutoCancel(true)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+
+                // Notify with unique ID
+                val notificationId = (System.currentTimeMillis() % 1000000).toInt() + i
+                notificationManager.notify(notificationId, builder.build())
+            }
+
+            // Clear the list
+            prefs.edit().putString("blocked_list", "[]").apply()
+        } catch (e: Exception) {
+            Log.e("AppBlockHelper", "Error releasing blocked notifications: ${e.message}")
+        }
+    }
+
+    fun getInstagramPrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences("instagram_blocker_prefs", Context.MODE_PRIVATE)
+    }
+
+    fun isIgSelectiveBlockingEnabled(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_use_selective_blocking", true)
+    }
+
+    fun setIgSelectiveBlockingEnabled(context: Context, enabled: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_use_selective_blocking", enabled).apply()
+    }
+
+    fun isIgReelsBlocked(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_reels_blocked", true)
+    }
+
+    fun setIgReelsBlocked(context: Context, blocked: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_reels_blocked", blocked).apply()
+    }
+
+    fun isIgStoriesBlocked(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_stories_blocked", true)
+    }
+
+    fun setIgStoriesBlocked(context: Context, blocked: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_stories_blocked", blocked).apply()
+    }
+
+    fun isIgExploreBlocked(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_explore_blocked", true)
+    }
+
+    fun setIgExploreBlocked(context: Context, blocked: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_explore_blocked", blocked).apply()
+    }
+
+    fun isIgAllowSharedReels(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_allow_shared_reels", true)
+    }
+
+    fun setIgAllowSharedReels(context: Context, allowed: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_allow_shared_reels", allowed).apply()
+    }
+
+    fun isIgFeedScrollLimit(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_feed_scroll_limit", false)
+    }
+
+    fun setIgFeedScrollLimit(context: Context, limited: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_feed_scroll_limit", limited).apply()
+    }
+
+    fun isIgReelsMuteAudio(context: Context): Boolean {
+        return getInstagramPrefs(context).getBoolean("ig_reels_mute_audio", true)
+    }
+
+    fun setIgReelsMuteAudio(context: Context, mute: Boolean) {
+        getInstagramPrefs(context).edit().putBoolean("ig_reels_mute_audio", mute).apply()
+    }
+
+    fun getIgReelsLimitMinutes(context: Context): Int {
+        return getInstagramPrefs(context).getInt("ig_reels_limit_minutes", 0)
+    }
+
+    fun setIgReelsLimitMinutes(context: Context, minutes: Int) {
+        getInstagramPrefs(context).edit().putInt("ig_reels_limit_minutes", minutes).apply()
+    }
+
+    // YouTube Advanced Blocker Helpers
+    fun getYoutubePrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences("youtube_blocker_prefs", Context.MODE_PRIVATE)
+    }
+
+    fun isYtSelectiveBlockingEnabled(context: Context): Boolean {
+        return getYoutubePrefs(context).getBoolean("yt_use_selective_blocking", true)
+    }
+
+    fun setYtSelectiveBlockingEnabled(context: Context, enabled: Boolean) {
+        getYoutubePrefs(context).edit().putBoolean("yt_use_selective_blocking", enabled).apply()
+    }
+
+    fun isYtShortsBlocked(context: Context): Boolean {
+        return getYoutubePrefs(context).getBoolean("yt_shorts_blocked", true)
+    }
+
+    fun setYtShortsBlocked(context: Context, blocked: Boolean) {
+        getYoutubePrefs(context).edit().putBoolean("yt_shorts_blocked", blocked).apply()
+    }
+
+    fun isYtSearchBlocked(context: Context): Boolean {
+        return getYoutubePrefs(context).getBoolean("yt_search_blocked", false)
+    }
+
+    fun setYtSearchBlocked(context: Context, blocked: Boolean) {
+        getYoutubePrefs(context).edit().putBoolean("yt_search_blocked", blocked).apply()
+    }
+
+    fun isYtCommentsBlocked(context: Context): Boolean {
+        return getYoutubePrefs(context).getBoolean("yt_comments_blocked", true)
+    }
+
+    fun setYtCommentsBlocked(context: Context, blocked: Boolean) {
+        getYoutubePrefs(context).edit().putBoolean("yt_comments_blocked", blocked).apply()
+    }
+
+    fun isYtOnlyAllowApprovedChannels(context: Context): Boolean {
+        return getYoutubePrefs(context).getBoolean("yt_only_approved_channels", false)
+    }
+
+    fun setYtOnlyAllowApprovedChannels(context: Context, enabled: Boolean) {
+        getYoutubePrefs(context).edit().putBoolean("yt_only_approved_channels", enabled).apply()
+    }
+
+    fun getYtApprovedChannels(context: Context): String {
+        return getYoutubePrefs(context).getString("yt_approved_channels", "Marques Brownlee, Kurzgesagt, TEDx") ?: "Marques Brownlee, Kurzgesagt, TEDx"
+    }
+
+    fun setYtApprovedChannels(context: Context, channels: String) {
+        getYoutubePrefs(context).edit().putString("yt_approved_channels", channels).apply()
+    }
+
+    // Snapchat Advanced Blocker Helpers
+    fun getSnapchatPrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences("snapchat_blocker_prefs", Context.MODE_PRIVATE)
+    }
+
+    fun isSnapSelectiveBlockingEnabled(context: Context): Boolean {
+        return getSnapchatPrefs(context).getBoolean("snap_use_selective_blocking", true)
+    }
+
+    fun setSnapSelectiveBlockingEnabled(context: Context, enabled: Boolean) {
+        getSnapchatPrefs(context).edit().putBoolean("snap_use_selective_blocking", enabled).apply()
+    }
+
+    fun isSnapSpotlightBlocked(context: Context): Boolean {
+        return getSnapchatPrefs(context).getBoolean("snap_spotlight_blocked", true)
+    }
+
+    fun setSnapSpotlightBlocked(context: Context, blocked: Boolean) {
+        getSnapchatPrefs(context).edit().putBoolean("snap_spotlight_blocked", blocked).apply()
+    }
+
+    fun isSnapMapBlocked(context: Context): Boolean {
+        return getSnapchatPrefs(context).getBoolean("snap_map_blocked", true)
+    }
+
+    fun setSnapMapBlocked(context: Context, blocked: Boolean) {
+        getSnapchatPrefs(context).edit().putBoolean("snap_map_blocked", blocked).apply()
+    }
+
+    fun isSnapDiscoverBlocked(context: Context): Boolean {
+        return getSnapchatPrefs(context).getBoolean("snap_discover_blocked", true)
+    }
+
+    fun setSnapDiscoverBlocked(context: Context, blocked: Boolean) {
+        getSnapchatPrefs(context).edit().putBoolean("snap_discover_blocked", blocked).apply()
+    }
+
+    // Facebook Advanced Blocker Helpers
+    fun getFacebookPrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences("facebook_blocker_prefs", Context.MODE_PRIVATE)
+    }
+
+    fun isFbSelectiveBlockingEnabled(context: Context): Boolean {
+        return getFacebookPrefs(context).getBoolean("fb_use_selective_blocking", true)
+    }
+
+    fun setFbSelectiveBlockingEnabled(context: Context, enabled: Boolean) {
+        getFacebookPrefs(context).edit().putBoolean("fb_use_selective_blocking", enabled).apply()
+    }
+
+    fun isFbReelsBlocked(context: Context): Boolean {
+        return getFacebookPrefs(context).getBoolean("fb_reels_blocked", true)
+    }
+
+    fun setFbReelsBlocked(context: Context, blocked: Boolean) {
+        getFacebookPrefs(context).edit().putBoolean("fb_reels_blocked", blocked).apply()
+    }
+
+    fun isFbWatchBlocked(context: Context): Boolean {
+        return getFacebookPrefs(context).getBoolean("fb_watch_blocked", true)
+    }
+
+    fun setFbWatchBlocked(context: Context, blocked: Boolean) {
+        getFacebookPrefs(context).edit().putBoolean("fb_watch_blocked", blocked).apply()
+    }
+
+    fun isFbStoriesBlocked(context: Context): Boolean {
+        return getFacebookPrefs(context).getBoolean("fb_stories_blocked", true)
+    }
+
+    fun setFbStoriesBlocked(context: Context, blocked: Boolean) {
+        getFacebookPrefs(context).edit().putBoolean("fb_stories_blocked", blocked).apply()
     }
 }

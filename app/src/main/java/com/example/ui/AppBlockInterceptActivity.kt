@@ -22,11 +22,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.util.AppBlockHelper
+import kotlinx.coroutines.delay
 
 class AppBlockInterceptActivity : ComponentActivity() {
     private val interceptPkgState = mutableStateOf("com.instagram.android")
     private val isLimitBlockState = mutableStateOf(false)
     private val isStrictModeInterceptState = mutableStateOf(false)
+    private val resetTriggerState = mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +41,26 @@ class AppBlockInterceptActivity : ComponentActivity() {
         setContent {
             val interceptPkg = interceptPkgState.value
             val isLimitBlock = isLimitBlockState.value
+            val context = androidx.compose.ui.platform.LocalContext.current
+
+            val resetTrigger = resetTriggerState.value
+            var countdownSeconds by remember(resetTrigger) { mutableStateOf(15) }
+            var isCountdownActive by remember(resetTrigger) { mutableStateOf(true) }
+            var limitBypassed by remember(resetTrigger, interceptPkg) {
+                mutableStateOf(com.example.util.AppBlockHelper.isDailyBypassed(context, interceptPkg))
+            }
+
+            LaunchedEffect(isLimitBlock, isCountdownActive, resetTrigger) {
+                if (isLimitBlock && isCountdownActive) {
+                    countdownSeconds = 15
+                    while (countdownSeconds > 0) {
+                        delay(1000L)
+                        countdownSeconds--
+                    }
+                    isCountdownActive = false
+                }
+            }
+
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     background = Color.Black.copy(alpha = 0.6f)
@@ -239,7 +261,7 @@ class AppBlockInterceptActivity : ComponentActivity() {
                                     )
                                     Text(
                                         text = if (isLimitBlock) {
-                                            "You have used all your allocated usage for today. Access is strictly disabled to cultivate focus.\n\nSelecting 'Close App' will safely return to home."
+                                            "Time is over for the day.\n\nYou have used all your allocated usage for today. Access is strictly disabled to cultivate focus. To continue, you must wait for the countdown or choose to Close App."
                                         } else {
                                             "Please allocate your session time usage below. Once the duration is over, Life OS will automatically block access.\n\nSelecting 'Close App' will safely exit and return to home."
                                         },
@@ -253,7 +275,63 @@ class AppBlockInterceptActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    if (!isLimitBlock) {
+                                    if (isLimitBlock && !limitBypassed) {
+                                        // 15-second countdown & Close App buttons
+                                        Button(
+                                            onClick = {
+                                                if (!isCountdownActive) {
+                                                    com.example.util.AppBlockHelper.setDailyBypass(context, interceptPkg, true)
+                                                    limitBypassed = true
+                                                }
+                                            },
+                                            enabled = !isCountdownActive,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (isCountdownActive) Color(0xFF5AB9EA).copy(alpha = 0.3f) else Color(0xFF5AB9EA),
+                                                contentColor = if (isCountdownActive) Color.Gray else Color.Black
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp)
+                                        ) {
+                                            val buttonText = if (isCountdownActive) {
+                                                "Still Use the App (${countdownSeconds}s)"
+                                            } else {
+                                                "Still Use the App"
+                                            }
+                                            Text(text = buttonText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        Button(
+                                            onClick = {
+                                                try {
+                                                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                                                        addCategory(Intent.CATEGORY_HOME)
+                                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                                    }
+                                                    startActivity(homeIntent)
+                                                } catch (e: Exception) {}
+                                                finish()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFFFF5252),
+                                                contentColor = Color.White
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp)
+                                        ) {
+                                            Text(
+                                                text = "Close App",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    } else {
+                                        // Show normal session options (Quick presets and Custom slider)
                                         Text(
                                             text = "⚡ QUICK PRESETS",
                                             color = Color.LightGray,
@@ -262,8 +340,8 @@ class AppBlockInterceptActivity : ComponentActivity() {
                                             modifier = Modifier.padding(bottom = 2.dp)
                                         )
                                         
-                                        // Predefined presets (including quick 1 and 2 mins for testing)
-                                        listOf(1, 2, 5, 15).forEach { mins ->
+                                        // Predefined presets
+                                        listOf(5, 10, 15).forEach { mins ->
                                             Button(
                                                 onClick = {
                                                     AppBlockHelper.startTemporarySession(applicationContext, interceptPkg, mins)
@@ -287,7 +365,7 @@ class AppBlockInterceptActivity : ComponentActivity() {
                                                     .height(42.dp)
                                             ) {
                                                 Text(
-                                                    text = "Use for $mins ${if (mins == 1) "minute" else "minutes"}",
+                                                    text = "Use for $mins minutes",
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 13.sp
                                                 )
@@ -363,35 +441,35 @@ class AppBlockInterceptActivity : ComponentActivity() {
                                                 fontSize = 12.sp
                                             )
                                         }
-                                    }
-                                    
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    
-                                    Button(
-                                        onClick = {
-                                            try {
-                                                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                                                    addCategory(Intent.CATEGORY_HOME)
-                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                                }
-                                                startActivity(homeIntent)
-                                            } catch (e: Exception) {}
-                                            finish()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFFFF5252),
-                                            contentColor = Color.White
-                                        ),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(44.dp)
-                                    ) {
-                                        Text(
-                                            text = "Close App",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp
-                                        )
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        
+                                        Button(
+                                            onClick = {
+                                                try {
+                                                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                                                        addCategory(Intent.CATEGORY_HOME)
+                                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                                    }
+                                                    startActivity(homeIntent)
+                                                } catch (e: Exception) {}
+                                                finish()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFFFF5252),
+                                                contentColor = Color.White
+                                            ),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp)
+                                        ) {
+                                            Text(
+                                                text = "Close App",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -408,5 +486,6 @@ class AppBlockInterceptActivity : ComponentActivity() {
         interceptPkgState.value = intent.getStringExtra("INTERCEPTED_PACKAGE") ?: "com.instagram.android"
         isLimitBlockState.value = intent.getBooleanExtra("IS_LIMIT_BLOCK", false)
         isStrictModeInterceptState.value = intent.getBooleanExtra("IS_STRICT_MODE_INTERCEPT", false)
+        resetTriggerState.value += 1
     }
 }

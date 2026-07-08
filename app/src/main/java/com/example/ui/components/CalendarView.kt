@@ -149,6 +149,31 @@ fun parseTaskDuration(description: String): Int {
     return 15
 }
 
+fun formatTimeRange(startHour: Int, startMinute: Int, durationMins: Int, isAmPm: Boolean): String {
+    val startTotal = startHour * 60 + startMinute
+    val endTotal = (startTotal + durationMins) % (24 * 60)
+    val endHour = endTotal / 60
+    val endMinute = endTotal % 60
+
+    return if (isAmPm) {
+        val startAmPm = if (startHour >= 12) "PM" else "AM"
+        val startDisp = when {
+            startHour == 0 -> 12
+            startHour > 12 -> startHour - 12
+            else -> startHour
+        }
+        val endAmPm = if (endHour >= 12) "PM" else "AM"
+        val endDisp = when {
+            endHour == 0 -> 12
+            endHour > 12 -> endHour - 12
+            else -> endHour
+        }
+        String.format(Locale.US, "%d:%02d %s - %d:%02d %s", startDisp, startMinute, startAmPm, endDisp, endMinute, endAmPm)
+    } else {
+        String.format(Locale.US, "%02d:%02d - %02d:%02d", startHour, startMinute, endHour, endMinute)
+    }
+}
+
 @Composable
 fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -1181,6 +1206,24 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                 }
                                                 val finalTopOffset = topOffsetDp.dp + dragOffsetDp
 
+                                                val isAmPm = task.description.contains(Regex("""\[Time:\s*\d{1,2}:\d{2}\s*(AM|PM)\]""", RegexOption.IGNORE_CASE))
+
+                                                val liveDeltaMinutes = if (isDragging) {
+                                                    val density = androidx.compose.ui.platform.LocalDensity.current
+                                                    val hourHeightPx = with(density) { hourHeight.toPx() }
+                                                    val minutesPerPx = 60f / hourHeightPx
+                                                    val deltaMins = (dragOffsetPx * minutesPerPx).toInt()
+                                                    Math.round(deltaMins / 5f) * 5
+                                                } else {
+                                                    0
+                                                }
+
+                                                val liveStartMinutes = (startHour * 60 + startMinute + liveDeltaMinutes).coerceIn(0, 23 * 60 + 55)
+                                                val liveStartHour = liveStartMinutes / 60
+                                                val liveStartMinute = liveStartMinutes % 60
+
+                                                val liveTimeRangeText = formatTimeRange(liveStartHour, liveStartMinute, durationMins, isAmPm)
+
                                                 Card(
                                                     modifier = Modifier
                                                         .width(cardWidth)
@@ -1285,6 +1328,15 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                         )
                                                         Spacer(modifier = Modifier.width(8.dp))
                                                         Column(modifier = Modifier.weight(1f)) {
+                                                            if (heightDp >= 32) {
+                                                                Text(
+                                                                    text = liveTimeRangeText,
+                                                                    color = WaterBlue.copy(alpha = 0.9f),
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 10.sp,
+                                                                    modifier = Modifier.padding(bottom = 1.dp)
+                                                                )
+                                                            }
                                                             Text(
                                                                 text = task.title,
                                                                 color = if (task.isCompleted) Color.Gray else Color.White,
@@ -1296,7 +1348,7 @@ fun CalendarView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                                                                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null
                                                                 )
                                                             )
-                                                            if (task.description.isNotEmpty() && heightDp >= 40) {
+                                                            if (task.description.isNotEmpty() && heightDp >= 50) {
                                                                 Text(
                                                                     text = task.description.replace(Regex("""\[[^\]]+\]"""), "").trim(),
                                                                     color = Color.Gray,

@@ -34,8 +34,7 @@ fun UserAvatar(
         Box(
             modifier = modifier
                 .size(size)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.05f)),
+                .background(Color.White.copy(alpha = 0.05f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(fallback, fontSize = fontSize)
@@ -67,8 +66,7 @@ fun UserAvatar(
             Box(
                 modifier = modifier
                     .size(size)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.05f)),
+                    .background(Color.White.copy(alpha = 0.05f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(fallback, fontSize = fontSize)
@@ -78,8 +76,7 @@ fun UserAvatar(
         Box(
             modifier = modifier
                 .size(size)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.05f)),
+                .background(Color.White.copy(alpha = 0.05f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(text = emojiOrBase64, fontSize = fontSize)

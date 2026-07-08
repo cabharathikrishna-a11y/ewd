@@ -2542,10 +2542,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         val currentUsername = _currentUsername.value ?: ""
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // Fetch latest users map to avoid overriding other fields like password or todaysFocusRecords
-                val response = com.example.api.FirebaseClient.api.getUsers()
-                val usersMap = if (response.isSuccessful) response.body() else null
-                val fetchedUser = usersMap?.get(currentUsername)
+                // Fetch latest user data to avoid overriding other fields like password or todaysFocusRecords
+                val response = com.example.api.FirebaseClient.api.getUser(currentUsername)
+                val fetchedUser = if (response.isSuccessful) response.body() else null
                 
                 val baseUser = fetchedUser ?: _currentUserRemote.value ?: com.example.api.UserRemote(password = "")
                 val updatedUser = baseUser.copy(name = name, nickname = nickname, emoji = emoji)
@@ -2593,9 +2592,8 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         val username = _currentUsername.value ?: return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val response = com.example.api.FirebaseClient.api.getUsers()
-                val users = if (response.isSuccessful) response.body() else null
-                val rawUser = users?.get(username)
+                val response = com.example.api.FirebaseClient.api.getUser(username)
+                val rawUser = if (response.isSuccessful) response.body() else null
                 val remoteUser = rawUser?.let { mergeWithLocalCache(it) }
                 
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -2648,10 +2646,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         val currentUsername = _currentUsername.value ?: ""
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // Fetch latest users map to avoid overriding other fields like password or todaysFocusRecords
-                val response = com.example.api.FirebaseClient.api.getUsers()
-                val usersMap = if (response.isSuccessful) response.body() else null
-                val fetchedUser = usersMap?.get(currentUsername)
+                // Fetch latest user data to avoid overriding other fields like password or todaysFocusRecords
+                val response = com.example.api.FirebaseClient.api.getUser(currentUsername)
+                val fetchedUser = if (response.isSuccessful) response.body() else null
                 
                 val baseUser = fetchedUser ?: _currentUserRemote.value ?: com.example.api.UserRemote(password = "")
                 val updatedUser = baseUser.copy(name = name, nickname = nickname, emoji = emoji)
@@ -2701,12 +2698,10 @@ class AppViewModel(application: Application, private val repository: LocalReposi
         
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // 1. Fetch latest users map to check if new username exists and get the most up-to-date old user data
-                val response = com.example.api.FirebaseClient.api.getUsers()
-                val allUsers = if (response.isSuccessful) response.body() else null
-                
+                // 1. If renaming, check if new username already exists by fetching just that user node
                 if (trimmedNewUser != oldUsername) {
-                    if (allUsers != null && allUsers.containsKey(trimmedNewUser)) {
+                    val checkResponse = com.example.api.FirebaseClient.api.getUser(trimmedNewUser)
+                    if (checkResponse.isSuccessful && checkResponse.body() != null) {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                             onError("Username already exists!")
                         }
@@ -2714,8 +2709,9 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                     }
                 }
                 
-                // 2. Safely retrieve old user data, fallback to local state
-                val fetchedOldUser = allUsers?.get(oldUsername)
+                // 2. Safely retrieve old user data, fetching only the specific user node
+                val response = com.example.api.FirebaseClient.api.getUser(oldUsername)
+                val fetchedOldUser = if (response.isSuccessful) response.body() else null
                 val baseUser = fetchedOldUser ?: _currentUserRemote.value ?: com.example.api.UserRemote()
                 val updatedRemote = baseUser.copy(password = trimmedNewPass)
                 

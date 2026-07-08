@@ -65,18 +65,6 @@ interface FirebaseApi {
         @Path("username") username: String
     ): retrofit2.Response<Unit>
 
-    @GET("friends_focus_states/{username}.json")
-    suspend fun getFriendsFocusStates(
-        @Path("username") username: String
-    ): retrofit2.Response<Map<String, UserRemote>?>
-
-    @PUT("friends_focus_states/{username}/{friend}.json")
-    suspend fun putFriendFocusState(
-        @Path("username") username: String,
-        @Path("friend") friend: String,
-        @Body state: UserRemote
-    ): UserRemote
-
     @GET("bells/{username}.json")
     suspend fun getBellSignal(
         @Path("username") username: String
@@ -208,20 +196,6 @@ class InterceptingFirebaseApi(
         }
         val userWithVersion = user.copy(appVersion = getAppVersionString())
         return delegate.putUser(username, userWithVersion)
-    }
-
-    override suspend fun getFriendsFocusStates(username: String): retrofit2.Response<Map<String, UserRemote>?> {
-        if (isTester() || username == "tester_mode_user") {
-            return retrofit2.Response.success(emptyMap())
-        }
-        return delegate.getFriendsFocusStates(username)
-    }
-
-    override suspend fun putFriendFocusState(username: String, friend: String, state: UserRemote): UserRemote {
-        if (isTester() || username == "tester_mode_user") {
-            return state
-        }
-        return delegate.putFriendFocusState(username, friend, state)
     }
 
     override suspend fun deleteUser(username: String): retrofit2.Response<Unit> {

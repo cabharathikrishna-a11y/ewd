@@ -366,11 +366,22 @@ class KeepAliveService : Service() {
         if (combinedMonitoringJob != null) return
         combinedMonitoringJob = serviceScope.launch {
             var lastCheckTime = android.os.SystemClock.elapsedRealtime()
+            var prevPackage: String? = null
+            var lastWasFocusing = false
             while (true) {
                 // Adaptive delay: 1 second if active timer or strict mode/monitored apps are present, 5 seconds if idle
                 val isTimerActive = FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value
+                val isFocusPhase = FocusTimerManager.isFocusPhase.value
+                val isCurrentlyFocusing = isTimerActive && isFocusPhase
+
+                if (lastWasFocusing && !isCurrentlyFocusing) {
+                    Log.d("KeepAliveService", "Focusing ended/paused/break. Releasing blocked notifications.")
+                    com.example.util.AppBlockHelper.releaseBlockedNotifications(applicationContext)
+                }
+                lastWasFocusing = isCurrentlyFocusing
+
                 val strictPrefs = getSharedPreferences("strict_mode_prefs", Context.MODE_PRIVATE)
-                val strictEnabled = strictPrefs.getBoolean("strict_mode_enabled", false)
+                val strictEnabled = strictPrefs.getBoolean("strict_mode_enabled", true)
                 val monitoredAppsCount = com.example.util.AppBlockHelper.getBlockedApps(applicationContext).size
 
                 val delayMs = if (isTimerActive || strictEnabled || monitoredAppsCount > 0) 1000L else 5000L
@@ -386,6 +397,20 @@ class KeepAliveService : Service() {
                     if (!isScreenOn) continue
 
                     val foregroundPackage = getForegroundPackageName() ?: continue
+
+                    // Detect if foreground app changed to clear active screen limit bypass session
+                    if (prevPackage != null && foregroundPackage != prevPackage) {
+                        val monitoredApps = com.example.util.AppBlockHelper.getBlockedApps(applicationContext)
+                        if (monitoredApps.contains(prevPackage)) {
+                            val isLimitOver = com.example.util.AppBlockHelper.isDailyLimitExceeded(applicationContext, prevPackage)
+                            if (isLimitOver) {
+                                com.example.util.AppBlockHelper.clearSessionForPackage(applicationContext, prevPackage)
+                                Log.d("KeepAliveService", "Cleared session for $prevPackage because user left the app (switched to $foregroundPackage)")
+                            }
+                        }
+                    }
+                    prevPackage = foregroundPackage
+
                     if (foregroundPackage == packageName) continue
 
                     val isBreakActive = !FocusTimerManager.isFocusPhase.value
@@ -461,23 +486,24 @@ class KeepAliveService : Service() {
                             val areLimitsActive = !isTimerActive || !strictEnabled || isAppInAllowList
 
                             if (areLimitsActive) {
-                                // 2. Check if daily limit is exceeded
+                                val hasSession = com.example.util.AppBlockHelper.isSessionActive(applicationContext, foregroundPackage)
                                 val isLimitOver = com.example.util.AppBlockHelper.isDailyLimitExceeded(applicationContext, foregroundPackage)
-                                if (isLimitOver) {
-                                    Log.d("KeepAliveService", "Daily limit exceeded for $foregroundPackage! Redirecting to Blocks...")
-                                    launch(Dispatchers.Main) {
-                                        Toast.makeText(applicationContext, "⚠️ Daily limit exceeded! Opening Blocks & Screen Limits settings...", Toast.LENGTH_LONG).show()
+                                val isLimitBypassed = com.example.util.AppBlockHelper.isDailyBypassed(applicationContext, foregroundPackage)
+                                
+                                if (isLimitOver && !isLimitBypassed) {
+                                    if (!hasSession) {
+                                        Log.d("KeepAliveService", "Daily limit exceeded for $foregroundPackage! Redirecting to block countdown...")
+                                        val launchIntent = Intent(applicationContext, com.example.ui.AppBlockInterceptActivity::class.java).apply {
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                            putExtra("IS_LIMIT_BLOCK", true)
+                                            putExtra("INTERCEPTED_PACKAGE", foregroundPackage)
+                                        }
+                                        startActivity(launchIntent)
                                     }
-                                    val launchIntent = Intent(applicationContext, com.example.MainActivity::class.java).apply {
-                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                        putExtra("SHOW_BLOCKS_PAGE", true)
-                                    }
-                                    startActivity(launchIntent)
                                     continue
                                 }
 
                                 // 3. If limit not over, check temporary session
-                                val hasSession = com.example.util.AppBlockHelper.isSessionActive(applicationContext, foregroundPackage)
                                 if (!hasSession) {
                                     Log.d("KeepAliveService", "No active temporary session for $foregroundPackage. Pointing to picker.")
                                     val launchIntent = Intent(applicationContext, com.example.ui.AppBlockInterceptActivity::class.java).apply {

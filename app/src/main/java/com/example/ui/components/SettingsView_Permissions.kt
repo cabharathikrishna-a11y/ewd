@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
     var hasGoogleFitPermission by remember { mutableStateOf(false) }
     
     var hasExactAlarmPermission by remember { mutableStateOf(false) }
+    var hasNotificationListenerPermission by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val checkAllPermissions = {
@@ -107,6 +109,10 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
         } else {
             true
         }
+
+        val cn = android.content.ComponentName(context, com.example.service.NotificationBlockerService::class.java)
+        val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+        hasNotificationListenerPermission = flat != null && flat.contains(cn.flattenToString())
     }
 
     LaunchedEffect(Unit) {
@@ -147,6 +153,22 @@ fun PermissionsSettingsSection(viewModel: AppViewModel) {
                         putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     }
                     context.startActivity(intent)
+                }
+            }
+        )
+
+        PermissionItem(
+            title = "Notification Blocker (Notification Access)",
+            description = "Required to block and release incoming notifications during Focus phase.",
+            isGranted = hasNotificationListenerPermission,
+            onClick = {
+                if (!hasNotificationListenerPermission) {
+                    try {
+                        val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Log.e("SettingsView", "Error starting notification listener settings: ${e.message}")
+                    }
                 }
             }
         )
