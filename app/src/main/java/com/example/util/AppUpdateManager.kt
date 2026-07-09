@@ -56,6 +56,9 @@ object AppUpdateManager {
     private val _updateStatus = MutableStateFlow<UpdateStatus>(UpdateStatus.Idle)
     val updateStatus: StateFlow<UpdateStatus> = _updateStatus
 
+    @Volatile
+    private var isDownloadingActive = false
+
     private val updateScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     /**
@@ -988,9 +991,18 @@ object AppUpdateManager {
      * Downloads and installs the update.
      */
     suspend fun downloadAndInstallUpdate(context: Context, providedFileId: String?) {
-        _updateStatus.value = UpdateStatus.SecuringData
+        synchronized(this) {
+            if (isDownloadingActive) {
+                Log.i(TAG, "Download is already in progress, ignoring duplicate request.")
+                return
+            }
+            isDownloadingActive = true
+        }
 
-        withContext(Dispatchers.IO) {
+        try {
+            _updateStatus.value = UpdateStatus.SecuringData
+
+            withContext(Dispatchers.IO) {
             try {
                 // 0. Pre-Update Data Securing: Perform an automatic backup of the app's databases and settings
                 try {
@@ -1139,6 +1151,9 @@ object AppUpdateManager {
                             if (apkFile.exists()) {
                                 apkFile.delete()
                             }
+                            synchronized(this@AppUpdateManager) {
+                                isDownloadingActive = false
+                            }
                             downloadAndInstallUpdate(context, providedFileId)
                             return@withContext
                         }
@@ -1261,6 +1276,11 @@ object AppUpdateManager {
                 Log.e(TAG, "Error downloading update", e)
                 _updateStatus.value = UpdateStatus.Error("Download failed: ${e.localizedMessage ?: "Unknown network error"}. Pre-update data is fully secured.")
                 showCompletionNotification(context, "Update Failed", "Network download failure.", false)
+            }
+        }
+        } finally {
+            synchronized(this) {
+                isDownloadingActive = false
             }
         }
     }

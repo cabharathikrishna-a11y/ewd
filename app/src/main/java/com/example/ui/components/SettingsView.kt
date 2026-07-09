@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.AppViewModel
@@ -208,6 +210,13 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             icon = Icons.Default.Refresh,
                             iconBgColor = Color(0xFFFF8F00)
                         ) { activePage = 5 }
+                        HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
+                        SettingsRowItem(
+                            title = "8. SLEEP & WAKE-UP ALARM",
+                            subtitle = "Bedtime reminders, wake-up alarms, snooze & alarm states",
+                            icon = Icons.Default.Star,
+                            iconBgColor = Color(0xFF3F51B5)
+                        ) { activePage = 21 }
                     }
                 }
 
@@ -305,6 +314,13 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                             icon = Icons.Default.DirectionsWalk,
                             iconBgColor = Color(0xFFFFA726)
                         ) { activePage = 20 }
+                        HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
+                        SettingsRowItem(
+                            title = "19. RECOMPOSE FIREBASE",
+                            subtitle = "Clean database, delete non-Google registered user nodes, and verify structure",
+                            icon = Icons.Default.Refresh,
+                            iconBgColor = Color(0xFF00796B)
+                        ) { activePage = 22 }
                         HorizontalDivider(color = Color(0xFF1E1E22), thickness = 0.5.dp, modifier = Modifier.padding(start = 56.dp, end = 16.dp))
                         SettingsRowItem(
                             title = "LOGOUT",
@@ -484,6 +500,26 @@ fun SettingsView(viewModel: AppViewModel, modifier: Modifier = Modifier) {
                 viewModel = viewModel,
                 onBack = { activePage = 0 }
             )
+        }
+
+        21 -> {
+            SettingsSubpageWorkspace(
+                title = "Sleep & Wake-up Alarm",
+                description = "Manage bedtime reminders, morning alarms, snooze duration, and wake-up status logs.",
+                onBack = { activePage = 0 }
+            ) {
+                SettingsSleepWakePage(viewModel = viewModel)
+            }
+        }
+
+        22 -> {
+            SettingsSubpageWorkspace(
+                title = "Recompose Firebase Database",
+                description = "Verify data structure and clean up non-Google registered user nodes.",
+                onBack = { activePage = 0 }
+            ) {
+                SettingsRecomposeFirebasePage(viewModel = viewModel)
+            }
         }
     }
 
@@ -1052,6 +1088,476 @@ fun CalendarSettingsSection(viewModel: AppViewModel) {
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text("Sync Now", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsSleepWakePage(viewModel: AppViewModel) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+    
+    var bedtimeEnabled by remember { mutableStateOf(prefs.getBoolean("bedtime_reminder_enabled", true)) }
+    var wakeupEnabled by remember { mutableStateOf(prefs.getBoolean("wakeup_alarm_enabled", false)) }
+    
+    var bedtimeStr by remember { mutableStateOf(com.example.util.SleepTimeHelper.getSleepTime(context) ?: "22:00") }
+    var wakeupStr by remember { mutableStateOf(com.example.util.SleepTimeHelper.getWakeUpTime(context) ?: "07:00") }
+    
+    val todayStr = remember { java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()) }
+    var lastWokeUpTime by remember { mutableStateOf(prefs.getString("actual_wake_up_time_$todayStr", null)) }
+
+    // Format HH:mm string to a nice AM/PM string for display
+    fun formatToAmPm(timeStr: String): String {
+        return try {
+            if (timeStr == "LATE") return "Late Wake-up"
+            val parts = timeStr.split(":")
+            if (parts.size != 2) return timeStr
+            val h = parts[0].toInt()
+            val m = parts[1].toInt()
+            val ampm = if (h >= 12) "PM" else "AM"
+            val displayHour = when {
+                h == 0 -> 12
+                h > 12 -> h - 12
+                else -> h
+            }
+            String.format(java.util.Locale.US, "%d:%02d %s", displayHour, m, ampm)
+        } catch (e: Exception) {
+            timeStr
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Bedtime Reminder Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
+                border = BorderStroke(1.dp, Color(0xFF222225)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = "Bedtime Reminder",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            "Bedtime Reminder",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        "Receive a screen notification at your scheduled sleep time reminding you to wind down for bed.",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Enable Bedtime Reminder", color = Color.White, fontSize = 13.sp)
+                        Switch(
+                            checked = bedtimeEnabled,
+                            onCheckedChange = { isChecked ->
+                                bedtimeEnabled = isChecked
+                                prefs.edit().putBoolean("bedtime_reminder_enabled", isChecked).apply()
+                                com.example.util.AlarmScheduler.scheduleBedtimeReminder(context)
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = WaterBlue, checkedTrackColor = WaterBlue.copy(alpha = 0.5f))
+                        )
+                    }
+
+                    if (bedtimeEnabled) {
+                        HorizontalDivider(color = Color(0xFF222225), thickness = 0.5.dp)
+                        
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val parts = bedtimeStr.split(":")
+                                    val h = parts.getOrNull(0)?.toIntOrNull() ?: 22
+                                    val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                                    android.app.TimePickerDialog(context, { _, hour, minute ->
+                                        val newTime = String.format(java.util.Locale.US, "%02d:%02d", hour, minute)
+                                        bedtimeStr = newTime
+                                        com.example.util.SleepTimeHelper.setSleepTime(context, newTime)
+                                        com.example.util.AlarmScheduler.scheduleBedtimeReminder(context)
+                                    }, h, m, false).show()
+                                }
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Scheduled Bedtime", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Tap to change via clock pop-up", color = Color.Gray, fontSize = 11.sp)
+                            }
+                            Text(
+                                text = formatToAmPm(bedtimeStr),
+                                color = WaterBlue,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Morning Wake-up Alarm Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
+                border = BorderStroke(1.dp, Color(0xFF222225)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Morning Wake-up Alarm",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            "Morning Wake-up Alarm",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        "Configure a full-screen morning alarm that wakes you up with custom snooze, dismiss, or literal wake-up logs.",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Enable Wake-up Alarm", color = Color.White, fontSize = 13.sp)
+                        Switch(
+                            checked = wakeupEnabled,
+                            onCheckedChange = { isChecked ->
+                                wakeupEnabled = isChecked
+                                prefs.edit().putBoolean("wakeup_alarm_enabled", isChecked).apply()
+                                com.example.util.AlarmScheduler.scheduleWakeUpAlarm(context)
+                            },
+                            colors = SwitchDefaults.colors(checkedThumbColor = WaterBlue, checkedTrackColor = WaterBlue.copy(alpha = 0.5f))
+                        )
+                    }
+
+                    if (wakeupEnabled) {
+                        HorizontalDivider(color = Color(0xFF222225), thickness = 0.5.dp)
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val parts = wakeupStr.split(":")
+                                    val h = parts.getOrNull(0)?.toIntOrNull() ?: 7
+                                    val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                                    android.app.TimePickerDialog(context, { _, hour, minute ->
+                                        val newTime = String.format(java.util.Locale.US, "%02d:%02d", hour, minute)
+                                        wakeupStr = newTime
+                                        com.example.util.SleepTimeHelper.setWakeUpTime(context, newTime)
+                                        com.example.util.AlarmScheduler.scheduleWakeUpAlarm(context)
+                                    }, h, m, false).show()
+                                }
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Scheduled Wake-up Time", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Tap to change via clock pop-up", color = Color.Gray, fontSize = 11.sp)
+                            }
+                            Text(
+                                text = formatToAmPm(wakeupStr),
+                                color = WaterBlue,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Alarm Logs / Statistics Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D0D11)),
+                border = BorderStroke(1.dp, Color(0xFF222225)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Sleep Logs",
+                            tint = WaterBlue,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            "Today's Sleep Log",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Actual Wake Up Logged", color = Color.Gray, fontSize = 13.sp)
+                        Text(
+                            text = if (lastWokeUpTime != null) formatToAmPm(lastWokeUpTime!!) else "No wake-up logged yet",
+                            color = if (lastWokeUpTime != null) Color.Green else Color.Gray,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsRecomposeFirebasePage(viewModel: AppViewModel) {
+    val logs by viewModel.recomposeLogs.collectAsState()
+    val status by viewModel.recomposeStatus.collectAsState()
+    val lazyListState = rememberLazyListState()
+
+    // Auto scroll logs to the bottom as they are added
+    androidx.compose.runtime.LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            lazyListState.animateScrollToItem(logs.size - 1)
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Explanatory Banner Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E22)),
+                border = BorderStroke(1.dp, Color(0xFF33333C)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Firebase Database Integrity",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Recomposing the database verifies the data structure of all active records and cleans up unverified, legacy, or invalid user nodes from Firebase (such as mock usernames and non-Google registered accounts). This optimizes query speeds and protects privacy.",
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
+        // Action & Status Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E22)),
+                border = BorderStroke(1.dp, Color(0xFF33333C)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Current Operations Status",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            val statusText = when (status) {
+                                "idle" -> "System Idle - Ready"
+                                "running" -> "Executing Database Audit..."
+                                "success" -> "Optimization Completed"
+                                "error" -> "Process Interrupted"
+                                else -> "Unknown"
+                            }
+                            val statusColor = when (status) {
+                                "idle" -> Color(0xFF90A4AE)
+                                "running" -> Color(0xFF29B6F6)
+                                "success" -> Color(0xFF66BB6A)
+                                "error" -> Color(0xFFEF5350)
+                                else -> Color.White
+                            }
+                            Text(
+                                text = statusText,
+                                color = statusColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        when (status) {
+                            "running" -> {
+                                CircularProgressIndicator(
+                                    color = Color(0xFF00796B),
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.5.dp
+                                )
+                            }
+                            "success" -> {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Success",
+                                    tint = Color(0xFF66BB6A),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            "error" -> {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Error",
+                                    tint = Color(0xFFEF5350),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            else -> {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Idle",
+                                    tint = Color(0xFF90A4AE),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = { viewModel.recomposeFirebase() },
+                        enabled = status != "running",
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF00796B),
+                            disabledContainerColor = Color(0xFF004D40).copy(alpha = 0.5f)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("recompose_firebase_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (status == "running") "AUDITING FIREBASE..." else "RECOMPOSE FIREBASE",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Live Console Logs
+        item {
+            Text(
+                text = "Live Execution Logs",
+                color = Color.LightGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        }
+
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF0C0C0F))
+                    .border(1.dp, Color(0xFF222226), RoundedCornerShape(8.dp))
+                    .padding(8.dp)
+            ) {
+                if (logs.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Console waiting. Click 'RECOMPOSE FIREBASE' above to initiate process.",
+                            color = Color.Gray,
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(16.dp)
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        state = lazyListState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(logs.size) { idx ->
+                            val log = logs[idx]
+                            val textColor = when {
+                                log.contains("WARNING") -> Color(0xFFFFB300)
+                                log.contains("Error") || log.contains("Exception") -> Color(0xFFEF5350)
+                                log.contains("Successfully") || log.contains("Complete") || log.contains("Successfully deleted") -> Color(0xFF81C784)
+                                else -> Color(0xFFCFD8DC)
+                            }
+                            Text(
+                                text = log,
+                                color = textColor,
+                                fontSize = 11.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                lineHeight = 15.sp
+                            )
+                        }
                     }
                 }
             }

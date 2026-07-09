@@ -52,7 +52,8 @@ fun FriendsFocusPill(
         it.value.isFocusing == true && 
         it.key != "admin" &&
         it.value.status != "logged_out" &&
-        it.value.status != "uninstalled"
+        it.value.status != "uninstalled" &&
+        it.value.isGoogleUser == true
     }
 
     Box(
@@ -241,7 +242,8 @@ fun FriendsFocusDetailsDialog(
             if (username != "admin" && 
                 username != currentMeUsername &&
                 user.status != "logged_out" &&
-                user.status != "uninstalled"
+                user.status != "uninstalled" &&
+                user.isGoogleUser == true
             ) {
                 keys.add(username)
             }

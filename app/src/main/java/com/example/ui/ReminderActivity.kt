@@ -17,6 +17,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -98,36 +99,264 @@ class ReminderActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
-                // Priority-specific auto-dismiss
-                if (taskPriority.uppercase() == "LOW" || taskPriority.uppercase() == "NONE") {
-                    LaunchedEffect(Unit) {
-                        Log.d("ReminderActivity", "Auto-dismissing in 5 minutes.")
-                        kotlinx.coroutines.delay(5 * 60 * 1000L) // 5 minutes (300,000 ms)
-                        stopAlert()
-                        finish()
+                if (taskId == 20001) {
+                    BedtimeScreen(
+                        onDismiss = {
+                            stopAlert()
+                            cancelNotification()
+                            finish()
+                        }
+                    )
+                } else if (taskId == 20002) {
+                    WakeUpAlarmScreen(
+                        onSnooze = { minutes ->
+                            stopAlert()
+                            cancelNotification()
+                            AlarmScheduler.scheduleSnooze(applicationContext, taskId, taskTitle, taskTime, taskPriority, minutes)
+                            finish()
+                        },
+                        onDismiss = {
+                            stopAlert()
+                            cancelNotification()
+                            val prefs = applicationContext.getSharedPreferences("app_prefs", MODE_PRIVATE)
+                            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                            prefs.edit().putString("actual_wake_up_time_$todayStr", "LATE").apply()
+                            finish()
+                        },
+                        onWokeUp = {
+                            stopAlert()
+                            cancelNotification()
+                            val prefs = applicationContext.getSharedPreferences("app_prefs", MODE_PRIVATE)
+                            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+                            val curTimeStr = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                            prefs.edit().putString("actual_wake_up_time_$todayStr", curTimeStr).apply()
+                            finish()
+                        }
+                    )
+                } else {
+                    // Priority-specific auto-dismiss
+                    if (taskPriority.uppercase() == "LOW" || taskPriority.uppercase() == "NONE") {
+                        LaunchedEffect(Unit) {
+                            Log.d("ReminderActivity", "Auto-dismissing in 5 minutes.")
+                            kotlinx.coroutines.delay(5 * 60 * 1000L) // 5 minutes (300,000 ms)
+                            stopAlert()
+                            finish()
+                        }
                     }
+
+                    ReminderScreen(
+                        title = taskTitle.substringBefore(" (").trim(),
+                        time = taskTime,
+                        onDismiss = {
+                            stopAlert()
+                            cancelNotification()
+                            finish()
+                        },
+                        onSnooze = { minutes ->
+                            stopAlert()
+                            cancelNotification()
+                            AlarmScheduler.scheduleSnooze(applicationContext, taskId, taskTitle, taskTime, taskPriority, minutes)
+                            finish()
+                        },
+                        onComplete = {
+                            stopAlert()
+                            cancelNotification()
+                            markTaskCompletedAndFinish()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun BedtimeScreen(
+        onDismiss: () -> Unit
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color(0xFF06070D)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Text(
+                    text = "🌙",
+                    fontSize = 72.sp,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                Text(
+                    text = "Bedtime Reminder",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "It's time to wind down and prepare for sleep. Rest well!",
+                    color = Color.LightGray,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 22.sp
+                )
+                Spacer(modifier = Modifier.height(48.dp))
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF38B0F2)),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.width(200.dp).height(48.dp)
+                ) {
+                    Text("Goodnight", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun WakeUpAlarmScreen(
+        onSnooze: (Int) -> Unit,
+        onDismiss: () -> Unit,
+        onWokeUp: () -> Unit
+    ) {
+        var snoozeMinutes by remember { mutableStateOf(10) }
+        val timeFormat = remember { java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()) }
+        var currentTime by remember { mutableStateOf(timeFormat.format(java.util.Date())) }
+
+        LaunchedEffect(Unit) {
+            while (true) {
+                currentTime = timeFormat.format(java.util.Date())
+                kotlinx.coroutines.delay(1000L)
+            }
+        }
+
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color(0xFF090A10)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 48.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(top = 32.dp)
+                ) {
+                    Text(
+                        text = "☀️",
+                        fontSize = 64.sp,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    Text(
+                        text = "Good Morning!",
+                        color = Color.White,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = currentTime,
+                        color = Color(0xFF38B0F2),
+                        fontSize = 44.sp,
+                        fontWeight = FontWeight.Black
+                    )
                 }
 
-                ReminderScreen(
-                    title = taskTitle.substringBefore(" (").trim(),
-                    time = taskTime,
-                    onDismiss = {
-                        stopAlert()
-                        cancelNotification()
-                        finish()
-                    },
-                    onSnooze = { minutes ->
-                        stopAlert()
-                        cancelNotification()
-                        AlarmScheduler.scheduleSnooze(applicationContext, taskId, taskTitle, taskTime, taskPriority, minutes)
-                        finish()
-                    },
-                    onComplete = {
-                        stopAlert()
-                        cancelNotification()
-                        markTaskCompletedAndFinish()
+                // Interactive Buttons
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Woke Up button (Primary)
+                    Button(
+                        onClick = onWokeUp,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E676)),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("alarm_woke_up_btn")
+                    ) {
+                        Text(
+                            text = "I literally woke up!",
+                            color = Color.Black,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                )
+
+                    // Dismiss button (Secondary)
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("alarm_dismiss_btn")
+                    ) {
+                        Text(
+                            text = "I am gonna wake up late",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Snooze controls
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        IconButton(
+                            onClick = { if (snoozeMinutes > 5) snoozeMinutes -= 5 },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.08f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(12.dp)
+                                    .height(2.dp)
+                                    .background(Color.White.copy(alpha = 0.7f), shape = RoundedCornerShape(1.dp))
+                            )
+                        }
+
+                        Button(
+                            onClick = { onSnooze(snoozeMinutes) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFC7A168).copy(alpha = 0.15f)
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier
+                                .widthIn(min = 160.dp)
+                                .height(44.dp)
+                                .border(1.dp, Color(0xFFC7A168).copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+                        ) {
+                            Text(
+                                text = "Snooze $snoozeMinutes mins",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFE5C088)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { if (snoozeMinutes < 60) snoozeMinutes += 5 },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.08f))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Increase Snooze",
+                                tint = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -365,9 +594,13 @@ class ReminderActivity : ComponentActivity() {
 
     private fun startAlert() {
         val prefsForSilent = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        if (prefsForSilent.getBoolean("master_silent_mode", false) || prefsForSilent.getBoolean("task_silent_mode", false)) {
-            Log.d("ReminderActivity", "Silent mode or master silent mode is ON. Suppressing sound and vibration.")
-            return
+        
+        // Wakeup alarm (20002) always rings, other alarms check silent settings
+        if (taskId != 20002) {
+            if (prefsForSilent.getBoolean("master_silent_mode", false) || prefsForSilent.getBoolean("task_silent_mode", false)) {
+                Log.d("ReminderActivity", "Silent mode or master silent mode is ON. Suppressing sound and vibration.")
+                return
+            }
         }
 
         val alarmSoundKey = when (taskPriority.uppercase()) {
@@ -375,7 +608,10 @@ class ReminderActivity : ComponentActivity() {
             "MEDIUM" -> "task_medium_alarm_sound"
             else -> "task_low_alarm_sound"
         }
-        val isAlarmSoundEnabled = prefsForSilent.getBoolean(alarmSoundKey, false)
+        var isAlarmSoundEnabled = prefsForSilent.getBoolean(alarmSoundKey, false)
+        if (taskId == 20002) {
+            isAlarmSoundEnabled = true // Force ring wake-up alarm!
+        }
 
         if (isAlarmSoundEnabled) {
             Log.d("ReminderActivity", "Continuous Alarm Sound is enabled for priority: $taskPriority")

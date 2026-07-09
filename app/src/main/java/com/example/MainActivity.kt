@@ -122,6 +122,10 @@ class MainActivity : ComponentActivity() {
                             com.example.service.KeepAliveService.start(applicationContext)
                         }
 
+                        // Schedule bedtime reminder and wake-up alarm on app startup
+                        com.example.util.AlarmScheduler.scheduleBedtimeReminder(applicationContext)
+                        com.example.util.AlarmScheduler.scheduleWakeUpAlarm(applicationContext)
+
                         database = AppDatabase.getInstance(applicationContext)
                         repository = LocalRepository(database, applicationContext)
 
@@ -172,6 +176,25 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 
+                var showSocialOnboarding by remember {
+                    mutableStateOf(run {
+                        val appPrefs = context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                        val currentVersion = try {
+                            context.packageManager.getPackageInfo(context.packageName, 0).let {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                    it.longVersionCode.toInt()
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    it.versionCode
+                                }
+                            }
+                        } catch (e: Exception) {
+                            1
+                        }
+                        val shownVersion = appPrefs.getInt("social_blocker_settings_shown_version", -1)
+                        shownVersion != currentVersion
+                    })
+                }
                 LaunchedEffect(Unit) {
                     // Request Notification Permission on Android 13+ (API 33)
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -1080,265 +1103,88 @@ class MainActivity : ComponentActivity() {
                                 val formattedPast = formatSecondsToReadable(pastSeconds)
                                 val formattedRevised = formatSecondsToReadable(globalRevisedSecs)
 
-                                Text(
-                                    text = "3-STEP SYSTEM AUDIT LOG & COMPLIANCE CHECK",
-                                    color = Color.LightGray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Black
-                                )
+                                val timeFormatter = remember { java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()) }
+                                val startStr = verifiedStartMs?.let { timeFormatter.format(java.util.Date(it)) } ?: "N/A"
+                                
+                                var totalBreakMs = 0L
+                                verifiedPauseRanges.forEach { (pStart, pEnd) ->
+                                    if (pEnd >= pStart) {
+                                        totalBreakMs += (pEnd - pStart)
+                                    }
+                                }
+                                val breakSeconds = (totalBreakMs / 1000).toInt()
+                                val wallSeconds = globalFocusedSecs + breakSeconds
+                                val computedEndMs = verifiedStartMs?.let { it + wallSeconds * 1000L }
+                                val endStr = computedEndMs?.let { timeFormatter.format(java.util.Date(it)) } ?: "N/A"
 
-                                // 3-Step Verification Checklist Card
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = Color(0xFF15151A)),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22222A)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        // Step 1
-                                        Row(verticalAlignment = Alignment.Top) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = "Success",
-                                                tint = Color(0xFF4CAF50),
-                                                modifier = Modifier.size(16.dp).padding(top = 2.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Column {
-                                                Text("STEP 1: SESSION VERIFICATION", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                Text("Active session of $formattedNow calculated and verified locally.", color = Color.Gray, fontSize = 9.sp)
-                                            }
+                                        // 1. Previously Focused Time
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("PREVIOUSLY FOCUSED", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text(formattedPast, color = Color.LightGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                         }
 
                                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF22222A)))
 
-                                        // Step 2
-                                        Row(verticalAlignment = Alignment.Top) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = "Success",
-                                                tint = Color(0xFF4CAF50),
-                                                modifier = Modifier.size(16.dp).padding(top = 2.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Column {
-                                                Text("STEP 2: CACHE AUDIT & REVISING", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                Text("Database transaction complete. Total focus time updated from $formattedPast to $formattedRevised.", color = Color.Gray, fontSize = 9.sp)
-                                            }
+                                        // 2. Start Time
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("START TIME", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text(startStr, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                         }
 
                                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF22222A)))
 
-                                        // Step 3
-                                        Row(verticalAlignment = Alignment.Top) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = "Success",
-                                                tint = Color(0xFF4CAF50),
-                                                modifier = Modifier.size(16.dp).padding(top = 2.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Column {
-                                                Text("STEP 3: CLOUD SYNCED & BROADCASTED", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                Text("Heartbeat alignment success. Remote database state updated.", color = Color.Gray, fontSize = 9.sp)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Focus Session Integrity Audit Card
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF15151A)),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF22222A)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = "FOCUS METRIC AUDIT TRAIL",
-                                            color = WaterBlue,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-
-                                        val timeFormatter = remember { java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault()) }
-                                        val startStr = verifiedStartMs?.let { timeFormatter.format(java.util.Date(it)) } ?: "N/A"
-                                        
-                                        var totalBreakMs = 0L
-                                        verifiedPauseRanges.forEach { (pStart, pEnd) ->
-                                            if (pEnd >= pStart) {
-                                                totalBreakMs += (pEnd - pStart)
-                                            }
-                                        }
-                                        val breakSeconds = (totalBreakMs / 1000).toInt()
-                                        val wallSeconds = globalFocusedSecs + breakSeconds
-                                        
-                                        val computedEndMs = verifiedStartMs?.let { it + wallSeconds * 1000L }
-                                        val endStr = computedEndMs?.let { timeFormatter.format(java.util.Date(it)) } ?: "N/A"
-
-                                        // Start and End Times
-                                        if (verifiedStartMs != null) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Column {
-                                                    Text("START TIME", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                    Text(startStr, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                                                }
-                                                Column(horizontalAlignment = Alignment.End) {
-                                                    Text("END TIME", color = Color.Gray, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                                    Text(endStr, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                                                }
-                                            }
+                                        // 3. End Time
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("END TIME", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text(endStr, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                         }
 
                                         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF22222A)))
 
-                                        // Breaks / Pauses List
-                                        if (verifiedPauseRanges.isNotEmpty()) {
-                                            Text(
-                                                text = "PAUSE / BREAK INTERVALS",
-                                                color = Color.Gray,
-                                                fontSize = 8.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            verifiedPauseRanges.forEachIndexed { index, (pStart, pEnd) ->
-                                                val durationSecs = ((pEnd - pStart) / 1000).toInt()
-                                                val fromStr = timeFormatter.format(java.util.Date(pStart))
-                                                val toStr = timeFormatter.format(java.util.Date(pEnd))
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Pause,
-                                                            contentDescription = "Pause",
-                                                            tint = Color(0xFFFF9800),
-                                                            modifier = Modifier.size(10.dp)
-                                                        )
-                                                        Text("Break #${index + 1}: $fromStr to $toStr", color = Color.LightGray, fontSize = 9.sp)
-                                                    }
-                                                    Text(
-                                                        text = formatSecondsToReadable(durationSecs),
-                                                        color = Color(0xFFFF9800),
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
-                                            }
-                                            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF22222A)))
+                                        // 4. Current Focused Time
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("CURRENT FOCUSED TIME", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text(formattedNow, color = WaterBlue, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                         }
 
-                                        // Minutes Calculation Breakdown
-                                        Text(
-                                            text = "CALCULATION METRIC INTEGRITY",
-                                            color = Color.Gray,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF22222A)))
 
-                                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text("Total Wall Clock Duration:", color = Color.Gray, fontSize = 10.sp)
-                                                Text(formatSecondsToReadable(wallSeconds), color = Color.White, fontSize = 10.sp)
-                                            }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text("Minus Total Break Duration:", color = Color.Gray, fontSize = 10.sp)
-                                                Text("- ${formatSecondsToReadable(breakSeconds)}", color = Color(0xFFFF9800), fontSize = 10.sp)
-                                            }
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text("Net Verified Focused Time:", color = WaterBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                Text(formattedNow, color = Color(0xFF4CAF50), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
+                                        // 5. Revised Focused Time
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("REVISED FOCUSED TIME", color = Color.Gray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            Text(formattedRevised, color = Color(0xFF4CAF50), fontSize = 14.sp, fontWeight = FontWeight.Black)
                                         }
                                     }
                                 }
-
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E24)),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                                    ) {
-                                        Column {
-                                            Text(
-                                                text = "PAST FOCUSED TIME TODAY",
-                                                color = Color.Gray,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = formattedPast,
-                                                color = Color.LightGray,
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-
-                                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF333333)))
-
-                                        Column {
-                                            Text(
-                                                text = "FOCUSED TIME NOW (ADDED)",
-                                                color = Color.Gray,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = formattedNow,
-                                                color = WaterBlue,
-                                                fontSize = 22.sp,
-                                                fontWeight = FontWeight.Black
-                                            )
-                                        }
-
-                                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF333333)))
-
-                                        Column {
-                                            Text(
-                                                text = "REVISED DAILY TOTAL FOCUS",
-                                                color = Color.Gray,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Text(
-                                                text = formattedRevised,
-                                                color = Color(0xFF4CAF50),
-                                                fontSize = 22.sp,
-                                                fontWeight = FontWeight.Black
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    text = "Automated confirmation and 3-step system verification complete. Your focus time has been recorded securely.",
-                                    color = Color.Gray,
-                                    fontSize = 10.sp,
-                                    lineHeight = 14.sp
-                                )
                             }
                         },
                         confirmButton = {
@@ -1362,6 +1208,12 @@ class MainActivity : ComponentActivity() {
                         },
                         containerColor = Color(0xFF0F0F12),
                         shape = RoundedCornerShape(16.dp)
+                    )
+                }
+                
+                if (showSocialOnboarding) {
+                    SocialOnboardingView(
+                        onDismiss = { showSocialOnboarding = false }
                     )
                 }
             }

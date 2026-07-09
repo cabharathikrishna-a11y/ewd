@@ -775,7 +775,8 @@ class KeepAliveService : Service() {
                 // Check for focus transitions and trigger sound alert if we are NOT focusing with 30s debounce
                 users.forEach { (username, peer) ->
                     if (username != currentUsername && 
-                        username != "admin"
+                        username != "admin" &&
+                        peer.isGoogleUser == true
                     ) {
                         val isPeerNowFocusing = peer.isFocusing == true
                         latestFetchedPeerStates[username] = isPeerNowFocusing
@@ -1120,7 +1121,8 @@ class KeepAliveService : Service() {
             val currentUnixTime = System.currentTimeMillis() / 1000
             users.forEach { (username, u) ->
                 if (username != currentUsername && 
-                    username != "admin"
+                    username != "admin" &&
+                    u.isGoogleUser == true
                 ) {
                     val nameToShow = u.nickname ?: u.name ?: username
                     val isFocusing = u.isFocusing == true

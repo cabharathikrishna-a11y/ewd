@@ -131,4 +131,17 @@ object StorageHelper {
         val sharedPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         sharedPrefs.edit().putString(KEY_STORAGE, preference).apply()
     }
+
+    /**
+     * Retrieves or generates a unique, persistent ID for this device.
+     */
+    fun getDeviceId(context: Context): String {
+        val sharedPrefs = context.getSharedPreferences("app_device_info", Context.MODE_PRIVATE)
+        var deviceId = sharedPrefs.getString("device_id", null)
+        if (deviceId == null) {
+            deviceId = java.util.UUID.randomUUID().toString()
+            sharedPrefs.edit().putString("device_id", deviceId).apply()
+        }
+        return deviceId
+    }
 }

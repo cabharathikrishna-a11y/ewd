@@ -2105,7 +2105,7 @@ object FocusTimerManager {
 
         // Title
         val titleTv = TextView(context).apply {
-            text = "3-STEP SYSTEM AUDIT LOG & COMPLIANCE CHECK"
+            text = "SYSTEM VERIFICATION"
             setTextColor(0xFFCCCCCC.toInt())
             textSize = 12f
             setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
@@ -2113,10 +2113,10 @@ object FocusTimerManager {
         }
         dialogView.addView(titleTv)
 
-        // Steps Container Card
+        // Container Card
         val cardLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp12, dp12, dp12, dp12)
+            setPadding(dp16, dp16, dp16, dp16)
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(0xFF15151A.toInt())
                 setStroke(dpToPx(context, 1f), 0xFF22222A.toInt())
@@ -2126,135 +2126,93 @@ object FocusTimerManager {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                setMargins(0, 0, 0, dp12)
+                setMargins(0, 0, 0, dp16)
             }
             layoutParams = lp
         }
 
-        // Format times
-        val formattedNow = formatTime(elapsedSeconds)
-        val todayMins = getTodayFocusMinutes()
-
-        // Step 1
-        val step1Layout = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp8)
-        }
-        val check1 = TextView(context).apply {
-            text = "✔ "
-            setTextColor(0xFF4CAF50.toInt())
-            textSize = 14f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        val step1TextLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        val step1Title = TextView(context).apply {
-            text = "STEP 1: SESSION VERIFICATION"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 10f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        val step1Desc = TextView(context).apply {
-            text = "Active session of $formattedNow calculated and verified locally."
-            setTextColor(0xFF888888.toInt())
-            textSize = 9f
-        }
-        step1TextLayout.addView(step1Title)
-        step1TextLayout.addView(step1Desc)
-        step1Layout.addView(check1)
-        step1Layout.addView(step1TextLayout)
-        cardLayout.addView(step1Layout)
-
-        // Divider 1
-        val divider1 = View(context).apply {
-            background = android.graphics.drawable.ColorDrawable(0xFF22222A.toInt())
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(context, 1f)).apply {
-                setMargins(0, dp4, 0, dp8)
+        // Format helper
+        fun formatSecondsToReadable(seconds: Int): String {
+            if (seconds >= 3600) {
+                val h = seconds / 3600
+                val m = (seconds % 3600) / 60
+                val s = seconds % 60
+                return "${h}h ${m}m ${s}s"
+            } else if (seconds >= 60) {
+                val m = seconds / 60
+                val s = seconds % 60
+                return "${m}m ${s}s"
+            } else {
+                return "${seconds}s"
             }
         }
-        cardLayout.addView(divider1)
 
-        // Step 2
-        val step2Layout = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp8)
-        }
-        val check2 = TextView(context).apply {
-            text = "✔ "
-            setTextColor(0xFF4CAF50.toInt())
-            textSize = 14f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        val step2TextLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        val step2Title = TextView(context).apply {
-            text = "STEP 2: CACHE AUDIT & REVISING"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 10f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        val step2Desc = TextView(context).apply {
-            text = "Database transaction complete. Total focus time updated to $todayMins mins."
-            setTextColor(0xFF888888.toInt())
-            textSize = 9f
-        }
-        step2TextLayout.addView(step2Title)
-        step2TextLayout.addView(step2Desc)
-        step2Layout.addView(check2)
-        step2Layout.addView(step2TextLayout)
-        cardLayout.addView(step2Layout)
+        // Calculations
+        val currentSecs = elapsedSeconds
+        val revisedSecs = getTodayFocusSeconds()
+        val prevSecs = maxOf(0, revisedSecs - currentSecs)
 
-        // Divider 2
-        val divider2 = View(context).apply {
-            background = android.graphics.drawable.ColorDrawable(0xFF22222A.toInt())
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(context, 1f)).apply {
-                setMargins(0, dp4, 0, dp8)
+        val formattedPast = formatSecondsToReadable(prevSecs)
+        val formattedNow = formatSecondsToReadable(currentSecs)
+        val formattedRevised = formatSecondsToReadable(revisedSecs)
+
+        // Start / End
+        val startMs = _verifiedSessionStartMs.value ?: (StableTime.currentTimeMillis() - currentSecs * 1000L)
+        val endMs = StableTime.currentTimeMillis()
+        val timeFormatter = java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.getDefault())
+        val startStr = timeFormatter.format(java.util.Date(startMs))
+        val endStr = timeFormatter.format(java.util.Date(endMs))
+
+        // Helper to add a row programmatically
+        fun addMetricsRow(container: LinearLayout, labelText: String, valueText: String, valueColor: Int, isBold: Boolean = false, isHeavyBold: Boolean = false) {
+            val row = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             }
+            val label = TextView(context).apply {
+                text = labelText
+                setTextColor(0xFF888888.toInt())
+                textSize = 10f
+                setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val value = TextView(context).apply {
+                text = valueText
+                setTextColor(valueColor)
+                textSize = if (isHeavyBold) 14f else if (isBold) 12f else 11f
+                val style = if (isHeavyBold || isBold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
+                setTypeface(android.graphics.Typeface.DEFAULT, style)
+            }
+            row.addView(label)
+            row.addView(value)
+            container.addView(row)
         }
-        cardLayout.addView(divider2)
 
-        // Step 3
-        val step3Layout = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
+        fun addDivider(container: LinearLayout) {
+            val divider = View(context).apply {
+                background = android.graphics.drawable.ColorDrawable(0xFF22222A.toInt())
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(context, 1f)).apply {
+                    setMargins(0, dp8, 0, dp8)
+                }
+            }
+            container.addView(divider)
         }
-        val check3 = TextView(context).apply {
-            text = "✔ "
-            setTextColor(0xFF4CAF50.toInt())
-            textSize = 14f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        val step3TextLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        val step3Title = TextView(context).apply {
-            text = "STEP 3: CLOUD SYNCED & BROADCASTED"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 10f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-        }
-        val step3Desc = TextView(context).apply {
-            text = "Heartbeat alignment success. Remote database state updated."
-            setTextColor(0xFF888888.toInt())
-            textSize = 9f
-        }
-        step3TextLayout.addView(step3Title)
-        step3TextLayout.addView(step3Desc)
-        step3Layout.addView(check3)
-        step3Layout.addView(step3TextLayout)
-        cardLayout.addView(step3Layout)
+
+        // Add the 5 rows
+        addMetricsRow(cardLayout, "PREVIOUSLY FOCUSED", formattedPast, 0xFFD3D3D3.toInt(), isBold = true)
+        addDivider(cardLayout)
+        addMetricsRow(cardLayout, "START TIME", startStr, android.graphics.Color.WHITE)
+        addDivider(cardLayout)
+        addMetricsRow(cardLayout, "END TIME", endStr, android.graphics.Color.WHITE)
+        addDivider(cardLayout)
+        addMetricsRow(cardLayout, "CURRENT FOCUSED TIME", formattedNow, 0xFF38B6FF.toInt(), isBold = true)
+        addDivider(cardLayout)
+        addMetricsRow(cardLayout, "REVISED FOCUSED TIME", formattedRevised, 0xFF4CAF50.toInt(), isHeavyBold = true)
 
         dialogView.addView(cardLayout)
-
-        // Info text
-        val infoTv = TextView(context).apply {
-            text = "Automated confirmation and 3-step system verification complete. Your focus time has been recorded securely."
-            setTextColor(0xFF888888.toInt())
-            textSize = 10f
-            setPadding(0, 0, 0, dp16)
-        }
-        dialogView.addView(infoTv)
 
         // Alert dialog setup
         val dialog = android.app.AlertDialog.Builder(context, android.R.style.Theme_DeviceDefault_Dialog_NoActionBar)

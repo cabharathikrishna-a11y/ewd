@@ -15,6 +15,109 @@ import java.util.*
 object AlarmScheduler {
 
     private const val TAG = "AlarmScheduler"
+    
+    const val BEDTIME_REMINDER_REQUEST_CODE = 20001
+    const val WAKEUP_ALARM_REQUEST_CODE = 20002
+
+    fun scheduleBedtimeReminder(context: Context) {
+        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val enabled = prefs.getBoolean("bedtime_reminder_enabled", true)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+
+        val intent = Intent(context, TaskReminderReceiver::class.java).apply {
+            putExtra("TASK_ID", BEDTIME_REMINDER_REQUEST_CODE)
+            putExtra("TASK_TITLE", "Bedtime Reminder! 🌙")
+            putExtra("TASK_TIME", "")
+            putExtra("TASK_PRIORITY", "HIGH")
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            BEDTIME_REMINDER_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            alarmManager.cancel(pendingIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling bedtime alarm", e)
+        }
+
+        if (!enabled) {
+            Log.d(TAG, "Bedtime reminder is disabled.")
+            return
+        }
+
+        val sleepTime = SleepTimeHelper.getSleepTime(context) ?: "22:00"
+        val triggerTimeMs = calculateNextNotificationTimeMs(sleepTime)
+        if (triggerTimeMs != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                    } else {
+                        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                    }
+                } else {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                }
+                Log.d(TAG, "Scheduled bedtime reminder at $triggerTimeMs (Time: $sleepTime)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scheduling bedtime alarm", e)
+            }
+        }
+    }
+
+    fun scheduleWakeUpAlarm(context: Context) {
+        val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val enabled = prefs.getBoolean("wakeup_alarm_enabled", false)
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+
+        val intent = Intent(context, TaskReminderReceiver::class.java).apply {
+            putExtra("TASK_ID", WAKEUP_ALARM_REQUEST_CODE)
+            putExtra("TASK_TITLE", "Wake up Alarm! ☀️")
+            putExtra("TASK_TIME", "")
+            putExtra("TASK_PRIORITY", "HIGH")
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            WAKEUP_ALARM_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            alarmManager.cancel(pendingIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling wakeup alarm", e)
+        }
+
+        if (!enabled) {
+            Log.d(TAG, "Wakeup alarm is disabled.")
+            return
+        }
+
+        val wakeUpTime = SleepTimeHelper.getWakeUpTime(context) ?: "07:00"
+        val triggerTimeMs = calculateNextNotificationTimeMs(wakeUpTime)
+        if (triggerTimeMs != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                    } else {
+                        alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                    }
+                } else {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTimeMs, pendingIntent)
+                }
+                Log.d(TAG, "Scheduled wakeup alarm at $triggerTimeMs (Time: $wakeUpTime)")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error scheduling wakeup alarm", e)
+            }
+        }
+    }
 
     fun scheduleReminder(context: Context, task: Task) {
         // First cancel all previous alarms for this task so they don't leak or duplicate

@@ -62,6 +62,7 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
     var hasNotificationPermission by remember { mutableStateOf(false) }
     var hasOverlayPermission by remember { mutableStateOf(false) }
     var hasUsageStatsPermission by remember { mutableStateOf(false) }
+    var hasAccessibilityPermission by remember { mutableStateOf(false) }
     var hasDrivePermission by remember { mutableStateOf(false) }
     var hasPackageInstallPermission by remember { mutableStateOf(false) }
     var hasExactAlarmPermission by remember { mutableStateOf(false) }
@@ -89,6 +90,7 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
 
         hasOverlayPermission = Settings.canDrawOverlays(context)
         hasUsageStatsPermission = AppBlockHelper.hasUsageStatsPermission(context)
+        hasAccessibilityPermission = AppBlockHelper.isAccessibilityServiceEnabled(context)
         hasDrivePermission = GoogleDriveSyncManager.hasDrivePermission(context)
         hasPackageInstallPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
@@ -323,11 +325,11 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
 
             // 4. Usage Statistics Permission Section
             PermissionCard(
-                title = "App Usage Tracking (Optional)",
+                title = "App Usage Tracking (Mandatory)",
                 description = "Required to monitor active foreground apps, enforce daily time limits, and gather real-time habit analytics.",
                 isGranted = hasUsageStatsPermission,
                 icon = Icons.Default.Timeline,
-                accentColor = if (hasUsageStatsPermission) SuccessGreen else AccentOrange,
+                accentColor = if (hasUsageStatsPermission) SuccessGreen else AlertRed,
                 buttonText = if (hasUsageStatsPermission) "Enabled" else "Grant Usage Stats",
                 onButtonClick = {
                     if (!hasUsageStatsPermission) {
@@ -339,6 +341,31 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
                 throw e
             } catch (e: Exception) {
                             android.widget.Toast.makeText(context, "Could not open settings automatically.", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // 4b. Accessibility Blocker Service Section (Mandatory)
+            PermissionCard(
+                title = "Accessibility Blocker Service (Mandatory)",
+                description = "Required to block Reels, Shorts, Spotlight, and specific app sections inside social media. Without this, selective app blocking is not possible.",
+                isGranted = hasAccessibilityPermission,
+                icon = Icons.Default.Accessibility,
+                accentColor = if (hasAccessibilityPermission) SuccessGreen else AlertRed,
+                buttonText = if (hasAccessibilityPermission) "Enabled" else "Enable Accessibility",
+                onButtonClick = {
+                    if (!hasAccessibilityPermission) {
+                        try {
+                            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            context.startActivity(intent)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            isCheckingDriveData = false
+                            throw e
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Could not open settings automatically. Please go to Accessibility Settings and enable Life OS.", android.widget.Toast.LENGTH_LONG).show()
                         }
                     }
                 }
@@ -460,7 +487,7 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
             Spacer(modifier = Modifier.height(32.dp))
 
             // Mandatory requirement warning card
-            val mandatoryGranted = isBatteryOptIgnored && hasPackageInstallPermission && hasExactAlarmPermission && hasOverlayPermission
+            val mandatoryGranted = isBatteryOptIgnored && hasNotificationPermission && hasOverlayPermission && hasUsageStatsPermission && hasAccessibilityPermission && hasPackageInstallPermission && hasExactAlarmPermission
             if (!mandatoryGranted) {
                 Card(
                     modifier = Modifier
@@ -482,7 +509,7 @@ fun PermissionOnboardingView(viewModel: AppViewModel) {
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
-                            text = "Disabling battery optimization, granting exact alarms, enabling system overlay, and enabling update installation are strictly mandatory to enter Life OS. Ensure all four are configured above.",
+                            text = "All system permissions (Battery Optimization, Notifications, Overlay, Usage Tracking, Accessibility Service, Update Installation, and Exact Alarms) are strictly mandatory to run Life OS. Please configure all of them above to proceed.",
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,

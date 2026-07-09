@@ -34,7 +34,8 @@ data class UserRemote(
     val email: String? = null,
     val status: String? = null,
     val appVersion: String? = null,
-    val forceApkUrl: String? = null
+    val forceApkUrl: String? = null,
+    val deviceId: String? = null
 )
 
 @JsonClass(generateAdapter = true)

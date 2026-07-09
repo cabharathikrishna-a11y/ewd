@@ -517,9 +517,13 @@ object DatabaseBackupHelper {
 
     suspend fun importData(context: Context, database: AppDatabase, uri: Uri): Boolean {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { rawIn ->
+            val success = context.contentResolver.openInputStream(uri)?.use { rawIn ->
                 importDataFromStream(context, database, rawIn)
             } ?: false
+            if (success) {
+                deleteBackupFiles(context)
+            }
+            success
         } catch (e: Exception) {
             Log.e(TAG, "Failed to import data from Uri", e)
             false
@@ -1238,6 +1242,29 @@ object DatabaseBackupHelper {
 
         // Return unique existing/creatable directories
         return locations.distinct()
+    }
+
+    fun deleteBackupFiles(context: Context) {
+        try {
+            val locations = getBackupLocations(context)
+            for (dir in locations) {
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles()?.forEach { file ->
+                        if (file.isFile && (file.name == "lifeos_backup.zip" || file.name.endsWith(".zip") || file.name.contains("backup"))) {
+                            val deleted = file.delete()
+                            Log.d(TAG, "Deleted backup file after successful restore: ${file.absolutePath}, success = $deleted")
+                        }
+                    }
+                    val backupFile = java.io.File(dir, "lifeos_backup.zip")
+                    if (backupFile.exists() && backupFile.isFile) {
+                        val deleted = backupFile.delete()
+                        Log.d(TAG, "Deleted backup file direct: ${backupFile.absolutePath}, success = $deleted")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete backup files after successful import", e)
+        }
     }
 
     suspend fun autoBackup(context: Context, database: AppDatabase): Boolean {

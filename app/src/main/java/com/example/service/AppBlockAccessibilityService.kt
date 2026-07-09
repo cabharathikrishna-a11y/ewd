@@ -19,6 +19,32 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private var scrollCountOnFeed = 0
     private var lastYtWatchDetectedTime: Long = 0L
 
+    private var lastBlockTime: Long = 0L
+    private var consecutiveBlockCount = 0
+
+    private fun applyBlockAction(appName: String, featureName: String) {
+        val now = System.currentTimeMillis()
+        val timeSinceLastBlock = now - lastBlockTime
+        
+        if (timeSinceLastBlock < 2500) {
+            consecutiveBlockCount++
+        } else {
+            consecutiveBlockCount = 1
+        }
+        lastBlockTime = now
+
+        if (consecutiveBlockCount >= 3) {
+            Log.w("AppBlocker", "Consecutive block limit reached for $appName ($featureName). Forcing HOME!")
+            showToast("Focus Mode: Forcing HOME to break the $featureName loop! 🛑")
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            consecutiveBlockCount = 0 // reset
+        } else {
+            Log.w("AppBlocker", "Blocking $appName ($featureName). Going BACK.")
+            showToast("$appName $featureName is blocked! Stay focused 🎯")
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val packageName = event.packageName?.toString() ?: return
         
@@ -28,42 +54,33 @@ class AppBlockAccessibilityService : AccessibilityService() {
         }
 
         // 2. Fine-grained Instagram blocking logic
-        if (packageName == "com.instagram.android" && AppBlockHelper.isAppInBlockList(applicationContext, "com.instagram.android")) {
+        if (packageName == "com.instagram.android") {
             handleInstagramBlocking(event)
         }
 
         // 3. Fine-grained YouTube blocking logic
-        if (packageName == "com.google.android.youtube" && AppBlockHelper.isAppInBlockList(applicationContext, "com.google.android.youtube")) {
+        if (packageName == "com.google.android.youtube") {
             handleYoutubeBlocking(event)
         }
 
         // 4. Fine-grained Snapchat blocking logic
-        if (packageName == "com.snapchat.android" && AppBlockHelper.isAppInBlockList(applicationContext, "com.snapchat.android")) {
+        if (packageName == "com.snapchat.android") {
             handleSnapchatBlocking(event)
         }
 
         // 5. Fine-grained Facebook blocking logic
-        if ((packageName == "com.facebook.katana" || packageName == "com.facebook.lite") &&
-            (AppBlockHelper.isAppInBlockList(applicationContext, "com.facebook.katana") || AppBlockHelper.isAppInBlockList(applicationContext, "com.facebook.lite"))) {
+        if (packageName == "com.facebook.katana" || packageName == "com.facebook.lite") {
             handleFacebookBlocking(event)
         }
     }
 
     private fun handleInstagramBlocking(event: AccessibilityEvent) {
         val context = applicationContext
-        val isFocusing = (FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value) && FocusTimerManager.isFocusPhase.value
         
-        // Only enforce limits when Focus mode is active
-        if (!isFocusing) {
-            isViewingSharedReelAllowed = false
-            initialReelText = null
-            return
-        }
-
         val useSelective = AppBlockHelper.isIgSelectiveBlockingEnabled(context)
         if (!useSelective) return
 
-        val rootNode = rootInActiveWindow ?: return
+        val rootNode = rootInActiveWindow ?: event.source ?: return
 
         // Check if we are currently in Direct Messages / Chats
         val inDirectChat = checkInDirectChat(rootNode)
@@ -76,17 +93,13 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
         // Check for Stories screen
         if (AppBlockHelper.isIgStoriesBlocked(context) && checkIsViewingStory(rootNode)) {
-            Log.w("InstagramBlocker", "Stories blocked! Redirecting...")
-            showToast("Instagram Stories are hidden during Focus phase! ☕")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Instagram", "Stories")
             return
         }
 
         // Check for Explore screen
         if (AppBlockHelper.isIgExploreBlocked(context) && checkIsViewingExplore(rootNode)) {
-            Log.w("InstagramBlocker", "Explore blocked! Redirecting...")
-            showToast("Instagram Explore is blocked to prevent doom scrolling! 🎯")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Instagram", "Explore")
             return
         }
 
@@ -113,16 +126,13 @@ class AppBlockAccessibilityService : AccessibilityService() {
                     
                     if (hasScrolled || idChanged) {
                         Log.w("InstagramBlocker", "Reel scrolled or changed! Back to chat. initial=$initialReelText, current=$currentReelText")
-                        showToast("Delayed scroll blocker: returning to chat! 💬")
-                        performGlobalAction(GLOBAL_ACTION_BACK)
+                        applyBlockAction("Instagram", "Reels (scrolled)")
                         isViewingSharedReelAllowed = false
                         initialReelText = null
                     }
                 } else {
                     // Reels blocked entirely!
-                    Log.w("InstagramBlocker", "Reels blocked! Redirecting...")
-                    showToast("Instagram Reels are blocked. Stay focused! 🎯")
-                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    applyBlockAction("Instagram", "Reels")
                 }
                 return
             }
@@ -187,10 +197,28 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private fun checkIsViewingReels(node: AccessibilityNodeInfo): ReelsCheckResult {
         val list = mutableListOf<AccessibilityNodeInfo>()
         findNodesByCriteria(node, list) {
-            val id = it.viewIdResourceName ?: ""
-            val desc = it.contentDescription?.toString() ?: ""
-            id.contains("reels_video_container") || id.contains("reels_view_pager") ||
-            id.contains("reels_viewer") || desc.contains("Reels") || desc.contains("Double tap to like")
+            val id = (it.viewIdResourceName ?: "").lowercase()
+            val desc = (it.contentDescription?.toString() ?: "").lowercase()
+            val text = (it.text?.toString() ?: "").lowercase()
+            
+            val isBottomTabOrProfile = id.contains("tab") || id.contains("profile") || id.contains("nav_bar") || id.contains("navigation") || id.contains("bottom_sheet") || id.contains("action_bar")
+            
+            val matchesId = (
+                id.contains("reels") || id.contains("reel") || 
+                id.contains("clips") || id.contains("clip")
+            ) && !isBottomTabOrProfile
+            
+            val matchesDescOrText = desc.contains("reels player") || desc.contains("clips player") || 
+                                    desc.contains("reels video") || desc.contains("clips video") ||
+                                    desc.contains("double tap to like") || desc.contains("double_tap_to_like") ||
+                                    desc.contains("swipe up for next") || desc.contains("swipe_up_for_next") ||
+                                    text.contains("original audio") || text.contains("original sound") ||
+                                    desc.contains("original audio") || desc.contains("original sound") ||
+                                    text.contains("watch reels") || text.contains("watch clips") ||
+                                    text == "reels" || text == "clips" ||
+                                    desc == "reels" || desc == "clips"
+            
+            matchesId || matchesDescOrText
         }
         
         if (list.isEmpty()) return ReelsCheckResult(false, null)
@@ -198,8 +226,8 @@ class AppBlockAccessibilityService : AccessibilityService() {
         // Try to find a unique identifier for the current Reel (like caption or uploader's name)
         val textList = mutableListOf<AccessibilityNodeInfo>()
         findNodesByCriteria(node, textList) {
-            val id = it.viewIdResourceName ?: ""
-            id.contains("reel_caption") || id.contains("username") || id.contains("caption")
+            val id = (it.viewIdResourceName ?: "").lowercase()
+            id.contains("reel_caption") || id.contains("username") || id.contains("caption") || id.contains("clips_viewer_")
         }
         
         val identifier = textList.firstOrNull()?.text?.toString() ?: textList.firstOrNull()?.contentDescription?.toString()
@@ -240,36 +268,27 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
     private fun handleYoutubeBlocking(event: AccessibilityEvent) {
         val context = applicationContext
-        val isFocusing = (FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value) && FocusTimerManager.isFocusPhase.value
         
-        if (!isFocusing) return
-
         val useSelective = AppBlockHelper.isYtSelectiveBlockingEnabled(context)
         if (!useSelective) return
 
-        val rootNode = rootInActiveWindow ?: return
+        val rootNode = rootInActiveWindow ?: event.source ?: return
 
         // Check YouTube Shorts
         if (AppBlockHelper.isYtShortsBlocked(context) && checkIsViewingShorts(rootNode)) {
-            Log.w("YoutubeBlocker", "YouTube Shorts blocked! Redirecting...")
-            showToast("YouTube Shorts are blocked during Focus phase! ☕")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("YouTube", "Shorts")
             return
         }
 
         // Check YouTube Search
         if (AppBlockHelper.isYtSearchBlocked(context) && checkIsViewingSearch(rootNode)) {
-            Log.w("YoutubeBlocker", "YouTube Search blocked! Redirecting...")
-            showToast("YouTube Search is disabled to prevent distraction! 🎯")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("YouTube", "Search")
             return
         }
 
         // Check YouTube Comments
         if (AppBlockHelper.isYtCommentsBlocked(context) && checkIsViewingComments(rootNode)) {
-            Log.w("YoutubeBlocker", "YouTube Comments blocked! Redirecting...")
-            showToast("YouTube Comments are hidden during Focus phase! 💬")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("YouTube", "Comments")
             return
         }
 
@@ -290,9 +309,7 @@ class AppBlockAccessibilityService : AccessibilityService() {
                 if (lastYtWatchDetectedTime == 0L) {
                     lastYtWatchDetectedTime = System.currentTimeMillis()
                 } else if (System.currentTimeMillis() - lastYtWatchDetectedTime > 1500) {
-                    Log.w("YoutubeBlocker", "No whitelisted channels defined. Blocking watch screen...")
-                    showToast("Configure whitelisted YouTube channels in Settings! ☕")
-                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    applyBlockAction("YouTube", "Channels Setup Required")
                     lastYtWatchDetectedTime = 0L
                 }
                 return
@@ -325,9 +342,7 @@ class AppBlockAccessibilityService : AccessibilityService() {
                 if (lastYtWatchDetectedTime == 0L) {
                     lastYtWatchDetectedTime = System.currentTimeMillis()
                 } else if (System.currentTimeMillis() - lastYtWatchDetectedTime > 1500) {
-                    Log.w("YoutubeBlocker", "Unapproved YouTube channel playing! Redirecting...")
-                    showToast("Only whitelisted YouTube channels are allowed during Focus! ☕")
-                    performGlobalAction(GLOBAL_ACTION_BACK)
+                    applyBlockAction("YouTube", "Unapproved Channel Blocked")
                     lastYtWatchDetectedTime = 0L
                 }
             }
@@ -338,72 +353,54 @@ class AppBlockAccessibilityService : AccessibilityService() {
 
     private fun handleSnapchatBlocking(event: AccessibilityEvent) {
         val context = applicationContext
-        val isFocusing = (FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value) && FocusTimerManager.isFocusPhase.value
         
-        if (!isFocusing) return
-
         val useSelective = AppBlockHelper.isSnapSelectiveBlockingEnabled(context)
         if (!useSelective) return
 
-        val rootNode = rootInActiveWindow ?: return
+        val rootNode = rootInActiveWindow ?: event.source ?: return
 
         // Check Spotlight
         if (AppBlockHelper.isSnapSpotlightBlocked(context) && checkIsViewingSnapchatSpotlight(rootNode)) {
-            Log.w("SnapchatBlocker", "Snapchat Spotlight blocked! Redirecting...")
-            showToast("Snapchat Spotlight is blocked during Focus phase! 🛑")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Snapchat", "Spotlight")
             return
         }
 
         // Check Map
         if (AppBlockHelper.isSnapMapBlocked(context) && checkIsViewingSnapchatMap(rootNode)) {
-            Log.w("SnapchatBlocker", "Snapchat Map blocked! Redirecting...")
-            showToast("Snapchat Map is disabled during Focus phase! 🗺️")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Snapchat", "Map")
             return
         }
 
         // Check Discover / Stories
         if (AppBlockHelper.isSnapDiscoverBlocked(context) && checkIsViewingSnapchatDiscover(rootNode)) {
-            Log.w("SnapchatBlocker", "Snapchat Discover/Stories blocked! Redirecting...")
-            showToast("Snapchat Discover & Stories are hidden to keep you focused! ☕")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Snapchat", "Discover & Stories")
             return
         }
     }
 
     private fun handleFacebookBlocking(event: AccessibilityEvent) {
         val context = applicationContext
-        val isFocusing = (FocusTimerManager.isTimerRunning.value || FocusTimerManager.isStopwatchActive.value) && FocusTimerManager.isFocusPhase.value
         
-        if (!isFocusing) return
-
         val useSelective = AppBlockHelper.isFbSelectiveBlockingEnabled(context)
         if (!useSelective) return
 
-        val rootNode = rootInActiveWindow ?: return
+        val rootNode = rootInActiveWindow ?: event.source ?: return
 
         // Check Facebook Reels
         if (AppBlockHelper.isFbReelsBlocked(context) && checkIsViewingFbReels(rootNode)) {
-            Log.w("FacebookBlocker", "Facebook Reels blocked! Redirecting...")
-            showToast("Facebook Reels are blocked during Focus phase! ☕")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Facebook", "Reels")
             return
         }
 
         // Check Facebook Watch / Video
         if (AppBlockHelper.isFbWatchBlocked(context) && checkIsViewingFbWatch(rootNode)) {
-            Log.w("FacebookBlocker", "Facebook Watch/Video blocked! Redirecting...")
-            showToast("Facebook Watch/Video is disabled to keep you focused! 🎯")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Facebook", "Watch")
             return
         }
 
         // Check Facebook Stories
         if (AppBlockHelper.isFbStoriesBlocked(context) && checkIsViewingFbStories(rootNode)) {
-            Log.w("FacebookBlocker", "Facebook Stories blocked! Redirecting...")
-            showToast("Facebook Stories are hidden to keep you focused! 💬")
-            performGlobalAction(GLOBAL_ACTION_BACK)
+            applyBlockAction("Facebook", "Stories")
             return
         }
     }
@@ -411,11 +408,24 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private fun checkIsViewingShorts(node: AccessibilityNodeInfo): Boolean {
         val list = mutableListOf<AccessibilityNodeInfo>()
         findNodesByCriteria(node, list) {
-            val id = it.viewIdResourceName ?: ""
-            val desc = it.contentDescription?.toString() ?: ""
-            val txt = it.text?.toString() ?: ""
-            id.contains("shorts") || id.contains("Shorts") || id.contains("reel_container") ||
-            desc.contains("Shorts") || desc.contains("shorts") || txt.contains("Shorts") || txt.contains("shorts")
+            val id = (it.viewIdResourceName ?: "").lowercase()
+            val desc = (it.contentDescription?.toString() ?: "").lowercase()
+            val txt = (it.text?.toString() ?: "").lowercase()
+            
+            val isTabOrNav = id.contains("tab") || id.contains("navigation") || id.contains("nav_bar") || id.contains("action_bar")
+            
+            val matchesId = (
+                id.contains("shorts") || id.contains("reel_container") || 
+                id.contains("reel_player") || id.contains("shorts_player") || 
+                id.contains("shorts_overlay")
+            ) && !isTabOrNav
+            
+            val matchesDescOrText = desc.contains("shorts player") || desc.contains("shorts_player") ||
+                                    desc.contains("double tap to like") || txt == "shorts" || 
+                                    desc == "shorts" || txt.contains("shorts video") || 
+                                    desc.contains("shorts video") || desc.contains("swipe up for next")
+                                    
+            matchesId || matchesDescOrText
         }
         return list.isNotEmpty()
     }
@@ -498,12 +508,23 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private fun checkIsViewingSnapchatSpotlight(node: AccessibilityNodeInfo): Boolean {
         val list = mutableListOf<AccessibilityNodeInfo>()
         findNodesByCriteria(node, list) {
-            val id = it.viewIdResourceName ?: ""
-            val desc = it.contentDescription?.toString() ?: ""
-            val txt = it.text?.toString() ?: ""
-            id.contains("spotlight") || id.contains("Spotlight") ||
-            desc.contains("Spotlight") || desc.contains("spotlight") ||
-            txt.contains("Spotlight") || txt.contains("spotlight")
+            val id = (it.viewIdResourceName ?: "").lowercase()
+            val desc = (it.contentDescription?.toString() ?: "").lowercase()
+            val txt = (it.text?.toString() ?: "").lowercase()
+            
+            val isTabOrNav = id.contains("tab") || id.contains("navigation") || id.contains("nav_bar") || id.contains("action_bar")
+            
+            val matchesId = (
+                id.contains("spotlight_viewer") || id.contains("spotlight_swipe") ||
+                id.contains("spotlight_player") || id.contains("spotlight_fragment") ||
+                id.contains("spotlight")
+            ) && !isTabOrNav
+            
+            val matchesDescOrText = desc.contains("spotlight player") || desc.contains("spotlight_player") ||
+                                    desc.contains("double tap to like") || txt == "spotlight" ||
+                                    desc == "spotlight" || txt.contains("spotlight video")
+            
+            matchesId || matchesDescOrText
         }
         return list.isNotEmpty()
     }
@@ -538,12 +559,23 @@ class AppBlockAccessibilityService : AccessibilityService() {
     private fun checkIsViewingFbReels(node: AccessibilityNodeInfo): Boolean {
         val list = mutableListOf<AccessibilityNodeInfo>()
         findNodesByCriteria(node, list) {
-            val id = it.viewIdResourceName ?: ""
-            val desc = it.contentDescription?.toString() ?: ""
-            val txt = it.text?.toString() ?: ""
-            id.contains("reel") || id.contains("Reel") || id.contains("short_form") ||
-            desc.contains("Reel") || desc.contains("reel") || desc.contains("Short video") ||
-            txt.contains("Reel") || txt.contains("reel") || txt.contains("Short video")
+            val id = (it.viewIdResourceName ?: "").lowercase()
+            val desc = (it.contentDescription?.toString() ?: "").lowercase()
+            val txt = (it.text?.toString() ?: "").lowercase()
+            
+            val isTabOrNav = id.contains("tab") || id.contains("navigation") || id.contains("nav_bar") || id.contains("action_bar")
+            
+            val matchesId = (
+                id.contains("reel_viewer") || id.contains("reels_viewer") || 
+                id.contains("short_form") || id.contains("reel_video") ||
+                id.contains("fb_shorts") || id.contains("reels_tray")
+            ) && !isTabOrNav
+            
+            val matchesDescOrText = desc.contains("reel player") || desc.contains("reels player") ||
+                                    desc.contains("double tap to like") || txt == "reels" || 
+                                    desc == "reels" || txt == "reel" || desc == "reel"
+                                    
+            matchesId || matchesDescOrText
         }
         return list.isNotEmpty()
     }
@@ -587,7 +619,9 @@ class AppBlockAccessibilityService : AccessibilityService() {
                          AccessibilityEvent.TYPE_VIEW_SCROLLED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             notificationTimeout = 100
-            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or 
+                    AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or 
+                    AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
         }
         this.serviceInfo = info
     }

@@ -26,12 +26,73 @@ class TaskReminderReceiver : BroadcastReceiver() {
             Log.d("TaskReminderReceiver", "Master silent mode is ON. Suppressing background notification and full-screen activity.")
             return
         }
+
+        val rawTaskId = intent.getIntExtra("TASK_ID", -1)
+
+        // Handle Bedtime Reminder & Morning Wakeup Alarm
+        if (rawTaskId == 20001 || rawTaskId == 20002) {
+            val taskTitle = intent.getStringExtra("TASK_TITLE") ?: "Alarm"
+            val taskTime = intent.getStringExtra("TASK_TIME") ?: ""
+            val taskPriority = intent.getStringExtra("TASK_PRIORITY") ?: "HIGH"
+            
+            val fullScreenIntent = Intent(context, ReminderActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("TASK_ID", rawTaskId)
+                putExtra("RAW_TASK_ID", rawTaskId)
+                putExtra("TASK_TITLE", taskTitle)
+                putExtra("TASK_TIME", taskTime)
+                putExtra("TASK_PRIORITY", taskPriority)
+            }
+            
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Sleep alarms and bedtime reminders"
+                    enableLights(true)
+                    enableVibration(true)
+                    setBypassDnd(true)
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+            
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                rawTaskId,
+                fullScreenIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(com.example.R.drawable.ic_launcher_foreground)
+                .setContentTitle(taskTitle)
+                .setContentText("Tap to open alarm controls.")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(pendingIntent, true)
+                .setAutoCancel(true)
+            
+            notificationManager.notify(rawTaskId, builder.build())
+            
+            try {
+                context.startActivity(fullScreenIntent)
+            } catch (e: Exception) {
+                Log.e("TaskReminderReceiver", "Direct activity start omitted: ${e.message}")
+            }
+            
+            // Re-schedule for tomorrow
+            if (rawTaskId == 20001) {
+                com.example.util.AlarmScheduler.scheduleBedtimeReminder(context)
+            } else {
+                com.example.util.AlarmScheduler.scheduleWakeUpAlarm(context)
+            }
+            return
+        }
+
         if (com.example.util.SleepTimeHelper.isInSleepTime(context)) {
             Log.d("TaskReminderReceiver", "Currently in sleep time. Suppressing background notification and full-screen activity.")
             return
         }
 
-        val rawTaskId = intent.getIntExtra("TASK_ID", -1)
         val isAllDayCheck = intent.getBooleanExtra("IS_ALL_DAY_CHECK", false) || (rawTaskId == 9999)
         if (isAllDayCheck) {
             Log.d("TaskReminderReceiver", "All-day task notification alarm fired.")

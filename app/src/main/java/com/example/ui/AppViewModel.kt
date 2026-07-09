@@ -2907,21 +2907,55 @@ class AppViewModel(application: Application, private val repository: LocalReposi
 
     fun areMandatoryPermissionsGranted(): Boolean {
         val context = getApplication<android.app.Application>()
+        
+        // 1. Battery Optimization
         val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
         val batteryIgnored = pm.isIgnoringBatteryOptimizations(context.packageName)
+        
+        // 2. Notification Permission (Android 13+)
+        val notificationGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        
+        // 3. System Overlay (Draw over other apps)
+        val overlayGranted = android.provider.Settings.canDrawOverlays(context)
+        
+        // 4. Usage Statistics Access
+        val usageStatsGranted = com.example.util.AppBlockHelper.hasUsageStatsPermission(context)
+        
+        // 5. Accessibility Service Enabled
+        val accessibilityGranted = com.example.util.AppBlockHelper.isAccessibilityServiceEnabled(context)
+        
+        // 6. Install Unknown Apps (Package install source)
         val installAllowed = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
         } else {
             true
         }
-        return batteryIgnored && installAllowed
+        
+        // 7. Exact Alarm Schedule (Android 12+)
+        val alarmManager = context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager
+        val exactAlarmGranted = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            alarmManager.canScheduleExactAlarms()
+        } else {
+            true
+        }
+        
+        return batteryIgnored && notificationGranted && overlayGranted && usageStatsGranted && accessibilityGranted && installAllowed && exactAlarmGranted
     }
 
     fun navigateTo(screen: Screen) {
         if (!_isLoggedIn.value && screen != Screen.LOGIN) {
             _currentScreen.value = Screen.LOGIN
         } else if (_isLoggedIn.value && screen != Screen.LOGIN && screen != Screen.PROFILE_SETUP && screen != Screen.PERMISSION_ONBOARDING && screen != Screen.CALENDAR_OPTIMIZATION_ONBOARDING) {
-            if (!com.example.util.SleepTimeHelper.isWakeUpAndSleepTimeSet(getApplication())) {
+            if (!areMandatoryPermissionsGranted()) {
+                _currentScreen.value = Screen.PERMISSION_ONBOARDING
+            } else if (!com.example.util.SleepTimeHelper.isWakeUpAndSleepTimeSet(getApplication())) {
                 _currentScreen.value = Screen.CALENDAR_OPTIMIZATION_ONBOARDING
             } else {
                 _currentScreen.value = screen
@@ -6912,6 +6946,100 @@ class AppViewModel(application: Application, private val repository: LocalReposi
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_LONG).show()
                 }
+            }
+        }
+    }
+
+    val recomposeLogs = MutableStateFlow<List<String>>(emptyList())
+    val recomposeStatus = MutableStateFlow<String>("idle") // "idle", "running", "success", "error"
+
+    fun addRecomposeLog(msg: String) {
+        val current = recomposeLogs.value.toMutableList()
+        current.add("[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}] $msg")
+        recomposeLogs.value = current
+    }
+
+    fun recomposeFirebase() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            recomposeStatus.value = "running"
+            recomposeLogs.value = emptyList()
+            addRecomposeLog("Initializing Firebase Database Recomposition...")
+
+            try {
+                addRecomposeLog("Fetching all user nodes from Firebase Realtime Database...")
+                val response = com.example.api.FirebaseClient.api.getUsers()
+                if (!response.isSuccessful) {
+                    recomposeStatus.value = "error"
+                    addRecomposeLog("Error: Failed to fetch users. Response code: ${response.code()}")
+                    return@launch
+                }
+
+                val usersMap = response.body()
+                if (usersMap == null) {
+                    recomposeStatus.value = "error"
+                    addRecomposeLog("Error: Received empty or null database tree from Firebase.")
+                    return@launch
+                }
+
+                addRecomposeLog("Successfully retrieved database tree. Total users found: ${usersMap.size}")
+                val myUsername = _currentUsername.value
+
+                val nonGoogleUsers = mutableListOf<String>()
+                
+                addRecomposeLog("Verifying data integrity and checking Google registration status...")
+                usersMap.forEach { (username, user) ->
+                    addRecomposeLog("Checking user node '$username'...")
+                    
+                    // Verify structure
+                    val isGoogle = user.isGoogleUser == true
+                    addRecomposeLog(" -> Google User: $isGoogle | Email: ${user.email ?: "None"} | Focus State: ${user.isFocusing ?: false}")
+                    
+                    if (username == "admin") {
+                        addRecomposeLog(" -> Skipping protected system user '$username'")
+                    } else if (username == myUsername) {
+                        addRecomposeLog(" -> Skipping currently authenticated local user '$username'")
+                    } else if (!isGoogle) {
+                        addRecomposeLog(" -> WARNING: User '$username' is NOT a registered Google account user. Adding to cleanup list.")
+                        nonGoogleUsers.add(username)
+                    } else {
+                        addRecomposeLog(" -> User '$username' is a valid Google registered user.")
+                    }
+                }
+
+                if (nonGoogleUsers.isEmpty()) {
+                    addRecomposeLog("Audit Complete: No unwanted or unverified legacy users found. Firebase is in an optimal state!")
+                    recomposeStatus.value = "success"
+                } else {
+                    addRecomposeLog("Found ${nonGoogleUsers.size} unwanted user node(s) to remove.")
+                    nonGoogleUsers.forEach { username ->
+                        addRecomposeLog("Requesting deletion of node 'users/$username'...")
+                        val deleteResp = com.example.api.FirebaseClient.api.deleteUser(username)
+                        if (deleteResp.isSuccessful) {
+                            addRecomposeLog(" -> Successfully deleted 'users/$username' from Firebase.")
+                        } else {
+                            addRecomposeLog(" -> Warning: Failed to delete '$username'. Response code: ${deleteResp.code()}")
+                        }
+                    }
+                    
+                    addRecomposeLog("Clean-up complete! Syncing changes with the local repository...")
+                    // Trigger a refresh of the users list
+                    val refreshResp = com.example.api.FirebaseClient.api.getUsers()
+                    if (refreshResp.isSuccessful && refreshResp.body() != null) {
+                        val updated = refreshResp.body()!!.toMutableMap()
+                        if (myUsername != null) {
+                            updated[myUsername]?.let { myRemote ->
+                                updated[myUsername] = mergeWithLocalCache(myRemote)
+                            }
+                        }
+                        com.example.api.FirebaseRepository.updateUsers(updated)
+                    }
+                    addRecomposeLog("Database recomposition completed successfully!")
+                    recomposeStatus.value = "success"
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                recomposeStatus.value = "error"
+                addRecomposeLog("Critical Exception encountered: ${e.message}")
             }
         }
     }

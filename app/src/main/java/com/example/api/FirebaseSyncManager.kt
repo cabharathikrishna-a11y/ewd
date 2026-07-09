@@ -120,6 +120,16 @@ object FirebaseSyncManager {
 
             val listener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
+                    if (!snapshot.exists()) {
+                        // Friend doesn't exist or was deleted! Remove from our status flow
+                        val currentMap = _friendsLiveStatus.value.toMutableMap()
+                        if (currentMap.containsKey(username)) {
+                            currentMap.remove(username)
+                            _friendsLiveStatus.value = currentMap
+                            Log.d("FirebaseSyncManager", "Removed $username from live status because node does not exist")
+                        }
+                        return
+                    }
                     val userRemote = parseUserSnapshot(snapshot)
                     if (userRemote != null) {
                         // Update our thread-safe flow instantly

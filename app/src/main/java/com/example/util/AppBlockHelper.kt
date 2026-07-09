@@ -779,4 +779,22 @@ object AppBlockHelper {
     fun setFbStoriesBlocked(context: Context, blocked: Boolean) {
         getFacebookPrefs(context).edit().putBoolean("fb_stories_blocked", blocked).apply()
     }
+
+    fun isAccessibilityServiceEnabled(context: Context): Boolean {
+        val expectedComponentName = android.content.ComponentName(context, "com.example.service.AppBlockAccessibilityService")
+        val enabledServicesSetting = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val colonSplitter = android.text.TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServicesSetting)
+        while (colonSplitter.hasNext()) {
+            val componentNameString = colonSplitter.next()
+            val enabledService = android.content.ComponentName.unflattenFromString(componentNameString)
+            if (enabledService != null && (enabledService.packageName == context.packageName || enabledService == expectedComponentName)) {
+                return true
+            }
+        }
+        return false
+    }
 }
